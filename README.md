@@ -9,7 +9,7 @@ Build Status
 
 Overview
 ---------------------
-* This is the source of Joomla! 4.x.
+* This is the source of Joomla! 4.x. as a Fork from MacJoom
 * Joomla's [Official website](https://www.joomla.org).
 * Joomla! 4.4 [version history](https://docs.joomla.org/Special:MyLanguage/Joomla_4.4_version_history).
 * Detailed changes are in the [changelog](https://github.com/joomla/joomla-cms/commits/4.4-dev).
