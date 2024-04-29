@@ -42,8 +42,6 @@ class UpdateController extends BaseController
     {
         $this->checkToken();
 
-        /** @var \Joomla\Component\Joomlaupdate\Administrator\Model\UpdateModel $model */
-        $model = $this->getModel('Update');
         $user  = $this->app->getIdentity();
 
         // Make sure logging is working before continue
@@ -81,11 +79,6 @@ class UpdateController extends BaseController
 
             $this->app->close();
         }
-
-        // Set up the update log
-        $options['format']    = '{DATE}\t{TIME}\t{LEVEL}\t{CODE}\t{MESSAGE}';
-        $options['text_file'] = 'joomla_update.php';
-        Log::addLogger($options, Log::INFO, array('Update', 'databasequery', 'jerror'));
 
         // Try to download the next chunk
         /** @var UpdateModel $model */

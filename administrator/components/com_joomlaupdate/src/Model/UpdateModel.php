@@ -487,7 +487,7 @@ class UpdateModel extends BaseDatabaseModel
                 Log::INFO,
                 'Update'
             );
-        } catch (Exception $e) {
+        } catch (\RuntimeException $e) {
             // Informational log only
         }
 
@@ -496,7 +496,7 @@ class UpdateModel extends BaseDatabaseModel
 
         try {
             $http = HttpFactory::getHttp($httpOptions);
-        } catch (Exception $e) {
+        } catch (\RuntimeException $e) {
             return null;
         }
 
@@ -789,8 +789,7 @@ ENDDATA;
             }
 
             // Append messages.
-            $msg .= ob_get_contents();
-            ob_end_clean();
+            $msg .= ob_get_clean();
         } catch (\Throwable $e) {
             $this->collectError('JoomlaInstallerScript::preflight', $e);
             return false;
@@ -908,8 +907,7 @@ ENDDATA;
             }
 
             // Append messages.
-            $msg .= ob_get_contents();
-            ob_end_clean();
+            $msg .= ob_get_clean();
         } catch (\Throwable $e) {
             $this->collectError('JoomlaInstallerScript::update', $e);
             return false;
@@ -931,8 +929,7 @@ ENDDATA;
             $manifestClass->postflight('update', $installer);
 
             // Append messages.
-            $msg .= ob_get_contents();
-            ob_end_clean();
+            $msg .= ob_get_clean();
         } catch (\Throwable $e) {
             $this->collectError('JoomlaInstallerScript::postflight', $e);
             return false;
