@@ -2260,7 +2260,7 @@ ENDDATA;
                     // since we have done range we cannot use content-length, but content-range serves
                     $totalSize = $head->headers['Content-Range'] ?? null;
                     if (is_null($totalSize)) {
-                        $totalSize = $head->headers['content-rangex'] ?? null;
+                        $totalSize = $head->headers['content-range'] ?? null;
                     }
                     while (is_array($totalSize)) {
                         $totalSize = array_shift($totalSize);

@@ -25,7 +25,7 @@ Joomla = window.Joomla || {};
     const progressBar = document.getElementById('progress-bar');
     progressBar.classList.remove('active', 'progress-striped', 'bar-success', 'bar-danger');
     progressBar.style.width = '0%';
-    /* progressBar.attributes['aria-valuenow'] = '0'; */
+    progressBar.setAttribute('aria-valuenow', 0);
     progressBar.innerText = '0%';
     document.getElementById('dlpercent').innerText = '0%';
     document.getElementById('dlbytesin').innerText = '0';
@@ -80,7 +80,7 @@ ${msg}
           progressBar.classList.remove('active', 'progress-striped', 'bar-success', 'bar-danger');
           progressBar.classList.add('bar-success');
           progressBar.style.width = '100%';
-          /* progressBar.attributes['aria-valuenow'] = '100'; */
+          progressBar.setAttribute(['aria-valuenow'], 100);
           progressBar.innerText = '100%';
 
           window.location = JoomlaUpdateDownload.returnUrl;
@@ -95,7 +95,7 @@ ${msg}
 
         if (percentage) {
           progressBar.style.width = `${percentage.toFixed(1)}%`;
-          /* progressBar.attributes['aria-valuenow'] = `${percentage.toFixed(1)}`; */
+          progressBar.setAttribute('aria-valuenow', `${percentage.toFixed(1)}`);
           progressBar.innerText = `${percentage.toFixed(1)}%`;
           document.getElementById('dlpercent').innerText = `${percentage.toFixed(1)}%`;
           document.getElementById('dlbytestotal').innerText = `${total}`;
