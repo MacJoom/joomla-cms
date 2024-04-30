@@ -80,6 +80,7 @@ class UpdateModel extends BaseDatabaseModel
             'text_file' => 'joomla_update.php',
         ];
 
+        // get the Chunklength from params
         $this->getChunkLength();
 
         Log::addLogger($options, Log::ALL, ['Update', 'databasequery', 'jerror']);
@@ -507,7 +508,7 @@ class UpdateModel extends BaseDatabaseModel
             return null;
         }
 
-        if (!$result || ($result->getStatusCode() < 200 && $result->getStatusCode() > 299)) {
+        if (!$result || $result->getStatusCode() < 200 || $result->getStatusCode() > 299) {
             return null;
         }
 
@@ -2142,7 +2143,7 @@ ENDDATA;
      * @throws Exception
      * @since   __DEPLOY_VERSION__
      */
-    private function getDownloadInformation(bool $ignoreTotalSize = false): ?object
+    private function getDownloadInformation(): ?object
     {
         // Initialisation
         $response = (object)[
@@ -2159,7 +2160,6 @@ ENDDATA;
         ];
 
         $packageURL  = null;
-        $disposition = null;
 
         // Get the Joomla core update information
         $updateInfo = $this->getUpdateInformation();
@@ -2169,33 +2169,19 @@ ENDDATA;
         unset($temp);
 
         // Get the source URLs (primary URL and all mirrors, if any are set up)
-        $sourceURLs = array_map(
-            function ($name) {
-                return isset($name->url) ? $name->url : null;
-            },
-            $updateInfo['object']->get('downloadSources', [])
-        );
-
-        array_unshift($sourceURLs, trim($updateInfo['object']->downloadurl->_data));
-
-        $sourceURLs = array_filter(
-            $sourceURLs,
-            function ($source) {
-                return !empty($source);
-            }
-        );
-
-        $sourceURLs        = array_unique($sourceURLs);
+        $sourceURLs = ArrayHelper::getColumn($updateInfo['object']->get('downloadSources', []), 'url');
+        array_unshift($sourceURLs, $updateInfo['object']->downloadurl->_data);
+        $sourceURLs = array_unique($sourceURLs);
         $response->mirrors = $sourceURLs;
 
         // We have to manually follow the redirects here, so we set the option to false.
         $httpOptions = new Registry();
-        $httpOptions->set('follow_location', false);
+        $httpOptions->def('follow_location', false);
 
         // $headerOptions['content-length'] = 0; // get only information
         $headerOptions = ['Range' => sprintf('bytes=%u-%u', 0, 0)];
 
-        $maxtries = 3;
+        $maxtries = 3; // retries for connect to server
 
         // Go through all mirrors to find the first URL which responds successfully
         foreach ($sourceURLs as $sourceURL) {
@@ -2204,11 +2190,9 @@ ENDDATA;
             $retries = 0;
             /**
              * Try to follow redirections and ultimately get the HEAD info for the valid package URL (if any).
-             *
-             * This is only applied if I am NOT ignoring the total size of the package. If I don't care about the total
-             * size I can just assume that the URL works and call it a day. There's fallback code in doDownload().
+             * using GET with Range 0-0 since Amazon returns 403 if doing HEAD
              */
-            while (!$ignoreTotalSize) {
+            while (True) {
                 $to = 2; // initial timeout
                 $head = null;
                 while ($head === null && $retries < $maxtries)
@@ -2249,31 +2233,7 @@ ENDDATA;
 
                 // If no redirection is found set the total size and stop processing
                 if (!isset($head->headers['location'])) {
-                    $disposition         = $head->headers['content-disposition'] ?? null;
-
-                    while (is_array($disposition)) {
-                        $disposition = array_shift($disposition);
-                    }
-                    // since we have done range we cannot use content-length, but content-range serves
-                    $totalSize = $head->headers['Content-Range'] ?? null;
-                    if (is_null($totalSize)) {
-                        $totalSize = $head->headers['content-range'] ?? null;
-                    }
-                    while (is_array($totalSize)) {
-                        $totalSize = array_shift($totalSize);
-                    }
-                    $totalSize = explode('/', $totalSize);
-                    if (sizeof($totalSize) == 2) {
-                        $totalSize = $totalSize[1];
-                    } else {
-                        $totalSize = null;
-                    }
-
-                    while (is_array($totalSize)) {
-                        $totalSize = array_shift($totalSize);
-                    }
-
-                    $response->totalSize = $totalSize;
+                    $response->totalSize = $this->getTotalSizefromHeader($head);
 
                     break;
                 }
@@ -2305,17 +2265,19 @@ ENDDATA;
         }
 
         // Remove protocol, path and query string from URL
-        $basename = empty($disposition)
-            ? basename($packageURL)
-            : $this->contentDispositionToFilename($disposition);
-        $basename = $basename ?: basename($packageURL);
+        $basename = basename($packageURL);
 
         if (strpos($basename, '?') !== false) {
             $basename = substr($basename, 0, strpos($basename, '?'));
         }
 
         // Find the path to the temp directory and the local package.
-        $tempdir = (string)InputFilter::getInstance([], [], 1, 1)
+        $tempdir  = (string) InputFilter::getInstance(
+            [],
+            [],
+            InputFilter::ONLY_BLOCK_DEFINED_TAGS,
+            InputFilter::ONLY_BLOCK_DEFINED_ATTRIBUTES
+        )
             ->clean(Factory::getApplication()->get('tmp_path'), 'path');
         $target  = $tempdir . '/' . $basename;
 
@@ -2337,47 +2299,35 @@ ENDDATA;
     }
 
     /**
-     * Extracts the filename from a content-disposition HTTP header.
+     * Extracts totalSize of the download from HTTP header.
      *
-     * @param   string|null  $disposition  The contents of the content-disposition header.
+     * @param   string|null  $header contents of the http header.
      *
-     * @return  string|null  The extracted filename. NULL if it fails.
+     * @return  int|null  The totalSize. NULL if it fails.
      *
      * @since   __DEPLOY_VERSION__
      */
-    private function contentDispositionToFilename(?string $disposition): ?string
+    private function getTotalSizefromHeader(object $head):int
     {
-        if (empty($disposition)) {
-            return null;
+        // since we have done range we cannot use content-length, but content-range serves
+        $totalSize = $head->headers['Content-Range'] ?? null;
+        if (is_null($totalSize)) {
+            $totalSize = $head->headers['content-range'] ?? null;
+        }
+        while (is_array($totalSize)) {
+            $totalSize = array_shift($totalSize);
+        }
+        $totalSize = explode('/', $totalSize);
+        if (sizeof($totalSize) == 2) {
+            $totalSize = $totalSize[1];
+        } else {
+            $totalSize = null;
         }
 
-        if (strpos($disposition, ';') === false) {
-            return null;
+        while (is_array($totalSize)) {
+            $totalSize = array_shift($totalSize);
         }
-
-        [$type, $metadata] = explode(';', $disposition, 2);
-
-        if ($type !== 'attachment') {
-            return null;
-        }
-
-        $metaItems = explode(';', trim($metadata));
-
-        foreach ($metaItems as $line) {
-            if (strpos($line, '=') === false) {
-                continue;
-            }
-
-            [$metaName, $metaValue] = explode('=', $line, 2);
-
-            if (strtolower(trim($metaName)) !== 'filename') {
-                continue;
-            }
-
-            return trim($metaValue);
-        }
-
-        return null;
+        return $totalSize;
     }
 
     /**
