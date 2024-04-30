@@ -386,11 +386,11 @@ class UpdateModel extends BaseDatabaseModel
     }
 
     /**
-     * Processes the download of the update package to the site.
+     * Processes the chunked download of the update package to the site.
      *
      * @return  object|null  Null on failure, basename of the file in any other case.
      *
-     * @since   2.5.4
+     * @since   __DEPLOY_VERSION__
      */
     public function doDownload($frag = -1, $forceSinglePart = false)
     {
