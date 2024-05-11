@@ -87,11 +87,11 @@ class UpdateController extends BaseController
         $message = '';
 
         // Are we done yet?
-        if (is_object($result) && $result->done) {
+        if (is_array($result) && $result['done']) {
             $this->app->setUserState('com_joomlaupdate.file', basename($result->localFile));
 
             // If the checksum failed we will return with an error
-            if (!$result->valid) {
+            if (!$result['valid']) {
                 $message = Text::_('COM_JOOMLAUPDATE_VIEW_UPDATE_CHECKSUM_WRONG');
             }
         }
@@ -101,12 +101,12 @@ class UpdateController extends BaseController
             $message = Text::_('COM_JOOMLAUPDATE_VIEW_UPDATE_DOWNLOADFAILED');
         }
 
-        if (!is_object($result)) {
-            $result = new \stdClass();
+        if (!is_array($result)) {
+            $result = [];
         }
 
-        $result->error = !empty($message);
-        $result->message = $message;
+        $result['error'] = !empty($message);
+        $result['message'] = $message;
 
         // Return JSON to the browser
         @ob_end_clean();
