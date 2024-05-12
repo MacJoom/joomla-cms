@@ -2204,10 +2204,6 @@ ENDDATA;
                     {
                         // Problem with URL may be timeout - try again if not a timeout.
                         $this->logDownloadInfo($packageURL, $e->getCode().':'.$e->getMessage());
-                        if (strpos($e->getMessage(),'timed out') !== false) {
-                            //do not insist if there is a timeout
-                            break;
-                        };
                         $to = $to * 2;
                         $retries++;
                     }
