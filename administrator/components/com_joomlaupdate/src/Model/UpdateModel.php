@@ -33,6 +33,7 @@ use Joomla\Database\ParameterType;
 use Joomla\Filesystem\File;
 use Joomla\Registry\Registry;
 use Joomla\Utilities\ArrayHelper;
+use phpDocumentor\Reflection\Types\Null_;
 
 // phpcs:disable PSR1.Files.SideEffects
 \defined('_JEXEC') or die;
@@ -2155,8 +2156,6 @@ ENDDATA;
             'frag'       => 0,
             'done'       => false,
             'valid'      => true,
-            'updateInfo' => null,
-            'mirrors'    => '',
         ];
 
         $packageURL  = null;
@@ -2192,7 +2191,7 @@ ENDDATA;
              * Try to follow redirections and ultimately get the HEAD info for the valid package URL (if any).
              * using GET with Range 0-0 since Amazon returns 403 if doing HEAD
              */
-            while (True) {
+            while ($packageURL !== null) {
                 $to = 2; // initial timeout
                 $head = null;
                 while ($head === null && $retries < $maxtries)
@@ -2203,7 +2202,12 @@ ENDDATA;
                     }
                     catch (\RuntimeException $e)
                     {
-                        // Probably an invalid URL. Stop following redirections, indicate we need to go to the next mirror.
+                        // Problem with URL may be timeout - try again if not a timeout.
+                        $this->logDownloadInfo($packageURL, $e->getCode().':'.$e->getMessage());
+                        if (strpos($e->getMessage(),'timed out') !== false) {
+                            //do not insist if there is a timeout
+                            break;
+                        };
                         $to = $to * 2;
                         $retries++;
                     }
@@ -2214,6 +2218,8 @@ ENDDATA;
                     break;
                 }
                 $statusCode = $head->getStatusCode();
+
+                $this->logDownloadInfo($packageURL, $statusCode);
 
                 // HTTP error. Next mirror.
                 if ($statusCode < 200 || $statusCode > 399) {
@@ -2336,5 +2342,32 @@ ENDDATA;
         return $this->chunkLength =
             (int) ComponentHelper::getParams('com_joomlaupdate')
                 ->get('chunk_length', 10485760) ?: 10485760;
+    }
+
+    /**
+     * Logs the initial HTTP request from the downloadsource.
+     *
+     * @param   string|null  $packageURL url of downloadsource
+     *          string|null  $statusCode header statuscode or errormsg
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    private function logDownloadInfo($packageURL, string $statusCode): void
+    {
+        // do not put credentials into log
+        $p = strpos($packageURL, '?');
+        if ($p !== false) {
+            $url = substr($packageURL, 0, $p);
+        } else {
+            $url = $packageURL;
+        }
+        Log::add(
+            Text::sprintf(
+                'COM_JOOMLAUPDATE_DOWNLOADINFO',
+                $url, $statusCode
+            ),
+            Log::INFO,
+            'Update'
+        );
     }
 }
