@@ -177,6 +177,7 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
         if ($var === '_links') {
             return $this->links->data;
         }
+        return null;
     }
 
     /**
@@ -216,7 +217,7 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
         $data['script']        = $this->_script;
         $data['custom']        = $this->_custom;
 
-        $data['links']         = $this->renderlinks();
+        $data['links']         = $this->getHeadLinks();
 
         /**
          * @deprecated  4.0 will be removed in 6.0
@@ -356,7 +357,7 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
                     continue;
                 }
 
-                $this->links->append($link);
+                $this->links->append('headLinks', $link);
             }
         }
 
@@ -419,7 +420,7 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
         if (isset($data['links']) && is_array($data['links'])) {
             foreach ($data['links'] as $link) {
                 if (is_array($link)) {
-                    $this->links->append($link);
+                    $this->links->append('headLinks', $link);
                 }
             }
         }
