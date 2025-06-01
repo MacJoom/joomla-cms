@@ -43,7 +43,7 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
      * @deprecated  5.4 will be removed in 7.0
      *                This property is for backwards compatibility. Pass data through get/set functions in the future
      */
-    public $_links = [];
+    //public $_links = [];
 
     /**
      * Registry for Header `<link>` tags
@@ -175,7 +175,7 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
     public function __get($var)
     {
         if ($var === '_links') {
-            return $this->links->data;
+            return $this->getHeadLinks();
         }
         return null;
     }
