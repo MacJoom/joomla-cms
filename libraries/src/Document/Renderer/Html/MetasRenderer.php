@@ -115,7 +115,7 @@ class MetasRenderer extends DocumentRenderer
             if (isset($value['attribs']['type']) && $value['attribs']['type'] === $searchFor) {
                 $noFavicon = false;
             }
-        }, array_values((array)$this->_doc->_links));
+        }, $this->_doc->getHeadLinks());
 
         if ($noFavicon) {
             $client   = $app->isClient('administrator') === true ? 'administrator/' : 'site/';
@@ -179,11 +179,11 @@ class MetasRenderer extends DocumentRenderer
         $buffer .= $tab . '<title>' . htmlspecialchars($this->_doc->getTitle(), ENT_COMPAT, 'UTF-8') . '</title>' . $lnEnd;
 
         // Generate link declarations
-        foreach ($this->_doc->_links as $link => $linkAtrr) {
-            $buffer .= $tab . '<link href="' . $link . '" ' . $linkAtrr['relType'] . '="' . $linkAtrr['relation'] . '"';
+        foreach ($this->_doc->getHeadLinks() as $linkData) {
+            $buffer .= $tab . '<link href="' . $linkData['href'] . '" ' . $linkData['relType'] . '="' . $linkData['relation'] . '"';
 
-            if (\is_array($linkAtrr['attribs'])) {
-                if ($temp = ArrayHelper::toString($linkAtrr['attribs'])) {
+            if (\is_array($linkData['attribs'])) {
+                if ($temp = ArrayHelper::toString($linkData['attribs'])) {
                     $buffer .= ' ' . $temp;
                 }
             }

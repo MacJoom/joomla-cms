@@ -40,8 +40,19 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
      *
      * @var    array
      * @since  1.7.0
+     * @deprecated  5.4 will be removed in 7.0
+     *                This property is for backwards compatibility. Pass data through get/set functions in the future
      */
     public $_links = [];
+
+    /**
+     * Registry for Header `<link>` tags
+     *
+     * @var    array
+     * @since  __DEPLOY_VERSION__
+     */
+
+    protected Registry $links;
 
     /**
      * Array of custom tags
@@ -49,6 +60,7 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
      * @var    array
      * @since  1.7.0
      */
+
     public $_custom = [];
 
     /**
@@ -142,11 +154,46 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
     {
         parent::__construct($options);
 
+        //set up the registry for the header links
+        $this->links = new Registry();
+
         // Set document type
         $this->_type = 'html';
 
         // Set default mime type and document metadata (metadata syncs with mime type by default)
         $this->setMimeEncoding('text/html');
+    }
+
+    /**
+     * Magic getter for the links array
+     *
+     * @param   string  $var  The name of the property to get
+     * @return  array  The links array
+     *
+     * @since  __DEPLOY_VERSION__
+     */
+    public function __get($var)
+    {
+        if ($var === '_links') {
+            return $this->links->data;
+        }
+    }
+
+    /**
+     * Magic setter for the links array
+     *
+     * @param   string  $var  The name of the property to set
+     * @param   array   $value  The value to set
+     *
+     * @return  void
+     *
+     * @since  __DEPLOY_VERSION__
+     */
+    public function __set($var, $value)
+    {
+        if ($var === '_links') {
+            $this->links->loadArray($value);
+        }
     }
 
     /**
@@ -163,12 +210,13 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
         $data['description']   = $this->description;
         $data['link']          = $this->link;
         $data['metaTags']      = $this->_metaTags;
-        $data['links']         = $this->_links;
         $data['styleSheets']   = $this->_styleSheets;
         $data['style']         = $this->_style;
         $data['scripts']       = $this->_scripts;
         $data['script']        = $this->_script;
         $data['custom']        = $this->_custom;
+
+        $data['links']         = $this->renderlinks();
 
         /**
          * @deprecated  4.0 will be removed in 6.0
@@ -216,13 +264,14 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
             $this->description   = '';
             $this->link          = '';
             $this->_metaTags     = [];
-            $this->_links        = [];
             $this->_styleSheets  = [];
             $this->_style        = [];
             $this->_scripts      = [];
             $this->_script       = [];
             $this->_custom       = [];
             $this->scriptOptions = [];
+            //clear the head links registry
+            $this->links        = new Registry();
         }
 
         if (\is_array($types)) {
@@ -292,13 +341,24 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
         $this->description   = $data['description'] ?? $this->description;
         $this->link          = $data['link'] ?? $this->link;
         $this->_metaTags     = $data['metaTags'] ?? $this->_metaTags;
-        $this->_links        = $data['links'] ?? $this->_links;
         $this->_styleSheets  = $data['styleSheets'] ?? $this->_styleSheets;
         $this->_style        = $data['style'] ?? $this->_style;
         $this->_scripts      = $data['scripts'] ?? $this->_scripts;
         $this->_script       = $data['script'] ?? $this->_script;
         $this->_custom       = $data['custom'] ?? $this->_custom;
         $this->scriptOptions = (isset($data['scriptOptions']) && !empty($data['scriptOptions'])) ? $data['scriptOptions'] : $this->scriptOptions;
+
+        // refactored handling links
+        if (!empty($data['links']) && is_array($data['links'])) {
+            foreach ($data['links'] as $link) {
+                if (is_string($link)) {
+                    // Fallback for older versions: parse HTML string?
+                    continue;
+                }
+
+                $this->links->append($link);
+            }
+        }
 
         // Restore asset manager state
         $wa = $this->getWebAssetManager();
@@ -355,9 +415,15 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
             }
         }
 
-        $this->_links = (isset($data['links']) && !empty($data['links']) && \is_array($data['links']))
-            ? array_unique(array_merge($this->_links, $data['links']), SORT_REGULAR)
-            : $this->_links;
+        // refactored handling links
+        if (isset($data['links']) && is_array($data['links'])) {
+            foreach ($data['links'] as $link) {
+                if (is_array($link)) {
+                    $this->links->append($link);
+                }
+            }
+        }
+
         $this->_styleSheets = (isset($data['styleSheets']) && !empty($data['styleSheets']) && \is_array($data['styleSheets']))
             ? array_merge($this->_styleSheets, $data['styleSheets'])
             : $this->_styleSheets;
@@ -419,6 +485,24 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
     }
 
     /**
+     * set Head link(s) from array.
+     *
+     * @param  string      $href      The href to match (required).
+     * @param  string|null $relation  The relation to match (optional).
+     * @param  string|null $relType   The relType to match (optional).
+     *
+     * @return void
+     *
+     * @since __DEPLOY_VERSION__
+     */
+
+
+    public function setHeadLinks(array $links): void
+    {
+        $this->links->set('headLinks', $links);
+    }
+
+    /**
      * Adds `<link>` tags to the head of the document
      *
      * $relType defaults to 'rel' as it is the most common relation type used.
@@ -434,13 +518,70 @@ class HtmlDocument extends Document implements CacheControllerFactoryAwareInterf
      *
      * @since   1.7.0
      */
-    public function addHeadLink($href, $relation, $relType = 'rel', $attribs = [])
+    //Refactoring to Registry Links
+    public function addHeadLink(string $href, string $relation, string $relType = 'rel', array $attribs = []): self
     {
-        $this->_links[$href]['relation'] = $relation;
-        $this->_links[$href]['relType']  = $relType;
-        $this->_links[$href]['attribs']  = $attribs;
+        $link = [
+            'href'     => $href,
+            'relation' => $relation,
+            'relType'  => $relType,
+            'attribs'  => $attribs,
+        ];
+
+        $links = $this->links->get('headLinks', []);
+        $links[] = $link;
+        $this->links->set('headLinks', $links);
 
         return $this;
+    }
+
+    /**
+     * Removes link(s) from the head based on href, relation, and/or relType.
+     *
+     * @param  string      $href      The href to match (required).
+     * @param  string|null $relation  The relation to match (optional).
+     * @param  string|null $relType   The relType to match (optional).
+     *
+     * @return void
+     *
+     * @since __DEPLOY_VERSION__
+     */
+    public function removeHeadLink(string $href, ?string $relation = null, ?string $relType = null): void
+    {
+        $filtered = [];
+
+        foreach ($this->getHeadLinks() as $key => $link) {
+            if (!isset($link['href']) || $link['href'] !== $href) {
+                $filtered[$key] = $link;
+                continue;
+            }
+
+            if ($relation !== null && ($link['relation'] ?? null) !== $relation) {
+                $filtered[$key] = $link;
+                continue;
+            }
+
+            if ($relType !== null && ($link['relType'] ?? null) !== $relType) {
+                $filtered[$key] = $link;
+                continue;
+            }
+
+            // Else: match → exclude
+        }
+
+        $this->setHeadLinks($filtered);
+    }
+
+    /**
+     * Get all head links.
+     *
+     * @return  array  The links as array
+     *
+     * @since  __DEPLOY_VERSION__
+     */
+    public function getHeadLinks(): array
+    {
+        return $this->links->get('headLinks', []);
     }
 
     /**

@@ -181,9 +181,9 @@ final class Sef extends CMSPlugin implements SubscriberInterface
         // Check if a canonical html tag already exists (for instance, added by a component).
         $canonical = '';
 
-        foreach ($doc->_links as $linkUrl => $link) {
+        foreach ($doc->getHeadLinks() as $link) {
             if (isset($link['relation']) && $link['relation'] === 'canonical') {
-                $canonical = $linkUrl;
+                $canonical = $link['href'];
                 break;
             }
         }
@@ -191,7 +191,7 @@ final class Sef extends CMSPlugin implements SubscriberInterface
         // If a canonical html tag already exists get the canonical and change it to use the SEF plugin domain field.
         if (!empty($canonical)) {
             // Remove current canonical link.
-            unset($doc->_links[$canonical]);
+            $doc->removeHeadLink($canonical, 'canonical');
 
             // Set the current canonical link but use the SEF system plugin domain field.
             $canonical = $sefDomain . Uri::getInstance($canonical)->toString(['path', 'query', 'fragment']);

@@ -37,17 +37,17 @@ class SyndicateHelper
      */
     public function getSyndicateLink(Registry $params, HtmlDocument $document)
     {
-        foreach ($document->_links as $link => $value) {
-            $value = ArrayHelper::toString($value);
-
-            if (strpos($value, 'application/' . $params->get('format') . '+xml')) {
-                return $link;
+        foreach ($document->getHeadLinks() as $link) {
+            if (
+                isset($link['attribs']['type']) &&
+                str_contains($link['attribs']['type'], 'application/' . $params->get('format') . '+xml')
+            ) {
+                return $link['href'];
             }
         }
 
         return null;
     }
-
     /**
      * Gets the link
      *
