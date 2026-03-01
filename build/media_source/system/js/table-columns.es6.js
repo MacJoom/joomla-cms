@@ -172,7 +172,8 @@ class TableColumns {
     const value = this.listOfHidden.join(',');
     window.localStorage.setItem(this.storageKey, value);
 
-    // Sync to server for logged-in users (fire-and-forget)
+    // Sync to server only when the admin plugin has confirmed this is an admin session.
+    if (!Joomla.getOptions('table.columns.sync', false)) return;
     const token = Joomla.getOptions('csrf.token', '');
     if (!token) return;
 

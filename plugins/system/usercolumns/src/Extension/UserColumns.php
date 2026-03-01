@@ -71,6 +71,9 @@ final class UserColumns extends CMSPlugin implements SubscriberInterface
             return;
         }
 
+        // Tell the JS it is safe to sync column state to the server.
+        $app->getDocument()->addScriptOptions('table.columns.sync', true);
+
         $stored = $user->getParam('tablecolumns', '');
 
         if (empty($stored)) {
