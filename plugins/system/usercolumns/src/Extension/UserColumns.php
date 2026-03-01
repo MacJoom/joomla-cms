@@ -26,7 +26,7 @@ use Joomla\Event\SubscriberInterface;
  * User Columns plugin.
  *
  * Persists admin list column visibility preferences per user account
- * by storing them in #__users.params (key: ignored_tablecolumns).
+ * by storing them in #__users.params (key: hidden_tablecolumns).
  *
  * @since  __DEPLOY_VERSION__
  */
@@ -74,7 +74,7 @@ final class UserColumns extends CMSPlugin implements SubscriberInterface
         // Tell the JS it is safe to sync column state to the server.
         $app->getDocument()->addScriptOptions('table.columns.sync', true);
 
-        $stored = $user->getParam('ignored_tablecolumns', '');
+        $stored = $user->getParam('hidden_tablecolumns', '');
 
         if (empty($stored)) {
             return;
@@ -133,7 +133,7 @@ final class UserColumns extends CMSPlugin implements SubscriberInterface
         // Sanitise: allow only digits and commas
         $hidden = preg_replace('/[^0-9,]/', '', $hidden);
 
-        $stored = $user->getParam('ignored_tablecolumns', '');
+        $stored = $user->getParam('hidden_tablecolumns', '');
         $prefs  = !empty($stored) ? (json_decode($stored, true) ?: []) : [];
 
         if ($hidden === '') {
@@ -142,7 +142,7 @@ final class UserColumns extends CMSPlugin implements SubscriberInterface
             $prefs[$tableName] = $hidden;
         }
 
-        $user->setParam('ignored_tablecolumns', json_encode($prefs));
+        $user->setParam('hidden_tablecolumns', json_encode($prefs));
         $user->save();
     }
 }
