@@ -169,15 +169,42 @@ class TableColumns {
    * Save state, list of hidden columns
    */
   saveState() {
-    window.localStorage.setItem(this.storageKey, this.listOfHidden.join(','));
+    const value = this.listOfHidden.join(',');
+    window.localStorage.setItem(this.storageKey, value);
+
+    // Sync to server for logged-in users (fire-and-forget)
+    const token = Joomla.getOptions('csrf.token', '');
+    if (!token) return;
+
+    const body = new URLSearchParams({
+      [token]: '1',
+      tableName: this.tableName,
+      hidden: value,
+    });
+    fetch(
+      'index.php?option=com_ajax&plugin=usercolumns&group=system&format=json',
+      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body }
+    ).catch(() => {});
   }
 
   /**
-   * Load state, list of hidden columns
+   * Load state, list of hidden columns.
+   * Server-provided state (injected by plg_system_usercolumns) takes priority
+   * over localStorage so preferences follow the user across browsers.
    */
   loadState() {
-    const stored = window.localStorage.getItem(this.storageKey);
+    // 1. Try server-provided state first
+    const serverState = Joomla.getOptions('table.columns.state', {});
+    if (serverState[this.tableName] !== undefined) {
+      this.listOfHidden = serverState[this.tableName]
+        .split(',')
+        .map((val) => parseInt(val, 10))
+        .filter((val) => !isNaN(val));
+      return;
+    }
 
+    // 2. Fall back to localStorage
+    const stored = window.localStorage.getItem(this.storageKey);
     if (stored) {
       this.listOfHidden = stored.split(',').map((val) => parseInt(val, 10));
     }
@@ -187,7 +214,8 @@ class TableColumns {
 if (window.innerWidth > 992) {
   // Look for dataset name else page-title
   [...document.querySelectorAll('table:not(.columns-order-ignore)')].forEach(($table) => {
-    const tableName = ($table.dataset.name ? $table.dataset.name : document.querySelector('.page-title')?.textContent.trim()
+    const tableName = ($table.dataset.name ? $table.dataset.name : document.querySelector('.page-title')
+      .textContent.trim()
       .replace(/[^a-z0-9]/gi, '-')
       .toLowerCase()
     );
