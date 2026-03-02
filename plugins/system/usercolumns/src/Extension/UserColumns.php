@@ -71,8 +71,8 @@ final class UserColumns extends CMSPlugin implements SubscriberInterface
             return;
         }
 
-        // Tell the JS it is safe to sync column state to the server.
-        $app->getDocument()->addScriptOptions('table.columns.sync', true);
+        // Tell the JS whether it is safe to sync column state to the server.
+        $app->getDocument()->addScriptOptions('table.columns.sync', (bool) $this->params->get('save_database', 1));
 
         $stored = $user->getParam('hidden_tablecolumns', '');
 
@@ -109,6 +109,10 @@ final class UserColumns extends CMSPlugin implements SubscriberInterface
         $app = $this->getApplication();
 
         if (!($app instanceof AdministratorApplication)) {
+            return;
+        }
+
+        if (!(bool) $this->params->get('save_database', 1)) {
             return;
         }
 
