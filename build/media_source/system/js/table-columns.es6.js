@@ -10,6 +10,7 @@ class TableColumns {
     this.$headers = [].slice.call($table.querySelector('thead tr').children);
     this.$rows = $table.querySelectorAll('tbody tr');
     this.listOfHidden = [];
+    this.syncToDb = true;
 
     // Load previous state
     this.loadState();
@@ -98,6 +99,21 @@ class TableColumns {
       $ul.appendChild($li);
     });
 
+    const $syncLi = document.createElement('li');
+    $syncLi.classList.add('pt-2', 'mt-1', 'border-top');
+
+    const $syncLabel = document.createElement('label');
+    const $syncInput = document.createElement('input');
+    $syncInput.classList.add('form-check-input', 'me-1');
+    $syncInput.type = 'checkbox';
+    $syncInput.name = 'table[keep-settings]';
+    $syncInput.checked = this.syncToDb;
+
+    $syncLabel.textContent = Joomla.Text._('JGLOBAL_KEEP_SETTINGS_SAVE_TO_DB');
+    $syncLabel.insertAdjacentElement('afterbegin', $syncInput);
+    $syncLi.appendChild($syncLabel);
+    $ul.appendChild($syncLi);
+
     this.$table.insertAdjacentElement('beforebegin', $divouter);
     $divouter.appendChild($button);
     $divouter.appendChild($divinner);
@@ -105,6 +121,17 @@ class TableColumns {
 
     // Listen to checkboxes change
     $ul.addEventListener('change', (event) => {
+      if (event.target === $syncInput) {
+        this.syncToDb = event.target.checked;
+        window.localStorage.setItem(`${this.storageKey}-sync`, this.syncToDb ? '1' : '0');
+
+        if (this.syncToDb) {
+          this.saveState();
+        }
+
+        return;
+      }
+
       this.toggleColumn(parseInt(event.target.value, 10));
       this.saveState();
     });
@@ -174,6 +201,7 @@ class TableColumns {
 
     // Sync to server only when the admin plugin has confirmed this is an admin session.
     if (!Joomla.getOptions('table.columns.sync', false)) return;
+    if (!this.syncToDb) return;
     const token = Joomla.getOptions('csrf.token', '');
     if (!token) return;
 
@@ -209,6 +237,9 @@ class TableColumns {
     if (stored) {
       this.listOfHidden = stored.split(',').map((val) => parseInt(val, 10));
     }
+
+    const syncSetting = window.localStorage.getItem(`${this.storageKey}-sync`);
+    this.syncToDb = syncSetting !== '0';
   }
 }
 
