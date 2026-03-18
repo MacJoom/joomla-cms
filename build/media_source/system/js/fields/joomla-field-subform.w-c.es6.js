@@ -152,10 +152,6 @@ class JoomlaFieldSubform extends HTMLElement {
     if (tmplElement[0]) {
       this.template = tmplElement[0].innerHTML;
     }
-
-    if (!this.template) {
-      throw new Error('The row template is required for the subform element to work');
-    }
   }
 
   /**
@@ -164,6 +160,10 @@ class JoomlaFieldSubform extends HTMLElement {
    * @returns {HTMLElement}
    */
   addRow(after) {
+    if (!this.template) {
+      return null;
+    }
+
     // Count how many we already have
     const count = this.getRows().length;
     if (count >= this.maximum) {
