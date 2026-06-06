@@ -33,11 +33,13 @@ return new class () implements ServiceProviderInterface {
         $container->set(
             PluginInterface::class,
             $container->lazy(Newsfeeds::class, function (Container $container) {
+                $db         = $container->get(DatabaseInterface::class);
                 $plugin     = new Newsfeeds(
-                    (array) PluginHelper::getPlugin('finder', 'newsfeeds')
+                    (array) PluginHelper::getPlugin('finder', 'newsfeeds'),
+                    $db
                 );
                 $plugin->setApplication(Factory::getApplication());
-                $plugin->setDatabase($container->get(DatabaseInterface::class));
+                $plugin->setDatabase($db);
 
                 return $plugin;
             })

@@ -132,19 +132,29 @@ abstract class Adapter extends CMSPlugin
      * Method to instantiate the indexer adapter.
      *
      * @param   array                $config      An array that holds the plugin configuration.
+     * @param   ?DatabaseInterface   $db          The database
      *
      * @since   2.5
      */
-    public function __construct($config)
+    public function __construct($config, ?DatabaseInterface $db = null)
     {
         // Call the parent constructor.
         if ($config instanceof DispatcherInterface) {
             $dispatcher = $config;
             $config     = \func_num_args() > 1 ? func_get_arg(1) : [];
+            $db         = \func_num_args() > 2 ? func_get_arg(2) : $db;
 
             parent::__construct($dispatcher, $config);
         } else {
             parent::__construct($config);
+        }
+
+        if ($db !== null) {
+            $this->db = $db;
+
+            if (method_exists($this, 'setDatabase')) {
+                $this->setDatabase($db);
+            }
         }
 
         // Get the type id.

@@ -33,11 +33,13 @@ return new class () implements ServiceProviderInterface {
         $container->set(
             PluginInterface::class,
             $container->lazy(Contacts::class, function (Container $container) {
+                $db         = $container->get(DatabaseInterface::class);
                 $plugin     = new Contacts(
-                    (array) PluginHelper::getPlugin('finder', 'contacts')
+                    (array) PluginHelper::getPlugin('finder', 'contacts'),
+                    $db
                 );
                 $plugin->setApplication(Factory::getApplication());
-                $plugin->setDatabase($container->get(DatabaseInterface::class));
+                $plugin->setDatabase($db);
 
                 return $plugin;
             })
