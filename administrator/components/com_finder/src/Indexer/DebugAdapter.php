@@ -10,6 +10,7 @@
 
 namespace Joomla\Component\Finder\Administrator\Indexer;
 
+use Joomla\CMS\Factory;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Table\Table;
 use Joomla\Database\DatabaseInterface;
@@ -129,15 +130,30 @@ abstract class DebugAdapter extends CMSPlugin
     /**
      * Method to instantiate the indexer adapter.
      *
-     * @param   DispatcherInterface  $dispatcher  The object to observe.
      * @param   array                $config      An array that holds the plugin configuration.
+     * @param   ?DatabaseInterface   $db          The database
      *
      * @since   5.0.0
      */
-    public function __construct(DispatcherInterface $dispatcher, array $config)
+    public function __construct($config, ?DatabaseInterface $db = null)
     {
         // Call the parent constructor.
-        parent::__construct($dispatcher, $config);
+        if ($config instanceof DispatcherInterface) {
+            $dispatcher = $config;
+            $config     = \func_num_args() > 1 ? func_get_arg(1) : [];
+            $db         = \func_num_args() > 2 ? func_get_arg(2) : $db;
+
+            parent::__construct($dispatcher, $config);
+        } else {
+            parent::__construct($config);
+        }
+
+        $db       = $db ?? Factory::getContainer()->get(DatabaseInterface::class);
+        $this->db = $db;
+
+        if (method_exists($this, 'setDatabase')) {
+            $this->setDatabase($db);
+        }
 
         // Get the type id.
         $this->type_id = $this->getTypeId();
