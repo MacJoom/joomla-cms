@@ -62,6 +62,39 @@
 					<option value="1">JYES</option>
 				</field>
 				<field
+					name="scanDeprecatedContent"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanDeprecatedOverrides"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="deprecatedTokens"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_DEPRETOKENS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_DEPRETOKENS_DESC"
+					rows="5"
+					cols="40"
+					filter="string"
+					default="JFactory,JText,JRoute,JUri,JRequest,JResponse,JHtml,JModel,JTable,JController,JComponentHelper,JPluginHelper,JFolder,JFile,JArrayHelper,JString,JError,jimport,JLoader::import"
+					showon="scanDeprecatedContent:1[OR]scanDeprecatedOverrides:1"
+				/>
+				<field
 					name="logging"
 					type="list"
 					description="PLG_HEALTHCHECK_PHPSCANNER_LOGGING_DESC"
