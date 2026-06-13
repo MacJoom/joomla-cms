@@ -18,6 +18,7 @@ use Joomla\CMS\Uri\Uri;
 use Joomla\Database\DatabaseAwareTrait;
 use Joomla\Database\ParameterType;
 use Joomla\Event\SubscriberInterface;
+use Joomla\Filesystem\Folder;
 use Joomla\Module\Healthcheck\Administrator\Event\HealthChecksEvent;
 
 // phpcs:disable PSR1.Files.SideEffects
@@ -57,6 +58,36 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     private const SOURCERER_PATTERNS = ['%{source%'];
 
     /**
+     * Legacy Joomla API tokens treated as "deprecated code". These are the removed/legacy
+     * "J*" classes and loaders from Joomla 3 and earlier. Matched as literal substrings
+     * (in files) and as "%token%" LIKE fragments (in content).
+     *
+     * @var    string[]
+     * @since  __DEPLOY_VERSION__
+     */
+    private const DEPRECATED_TOKENS = [
+        'JFactory',
+        'JText',
+        'JRoute',
+        'JUri',
+        'JRequest',
+        'JResponse',
+        'JHtml',
+        'JModel',
+        'JTable',
+        'JController',
+        'JComponentHelper',
+        'JPluginHelper',
+        'JFolder',
+        'JFile',
+        'JArrayHelper',
+        'JString',
+        'JError',
+        'jimport',
+        'JLoader::import',
+    ];
+
+    /**
      * Returns an array of events this subscriber will listen to.
      *
      * @return  array
@@ -93,9 +124,11 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
         $checks = [];
 
-        $checks['articles']  = $this->getArticlesWithPhp();
-        $checks['modules']   = $this->getModulesWithPhp();
-        $checks['sourcerer'] = $this->getSourcererTags();
+        $checks['articles']            = $this->getArticlesWithPhp();
+        $checks['modules']             = $this->getModulesWithPhp();
+        $checks['sourcerer']           = $this->getSourcererTags();
+        $checks['deprecatedcontent']   = $this->getDeprecatedInContent();
+        $checks['deprecatedoverrides'] = $this->getDeprecatedInOverrides();
 
         // Add the buttons to the result array
         $result = $event->getArgument('result', []);
@@ -208,6 +241,139 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         }
 
         return $item;
+    }
+
+    /**
+     * Returns the number of articles and modules whose embedded code uses deprecated Joomla APIs.
+     *
+     * @return  array  Array containing result count, link, text/note labels, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getDeprecatedInContent(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanDeprecatedContent', '1') == '1') {
+            try {
+                $item['icon']          = 'fas fa-clock-rotate-left';
+                $item['statusOnFound'] = 'warning';
+                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTTEXT');
+                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTNOTE');
+                $item['link']          = Uri::base() . 'index.php?option=com_content&view=articles';
+
+                $patterns = array_map(static fn(string $token): string => '%' . $token . '%', $this->getDeprecatedTokens());
+
+                $item['result'] = $this->countArtifacts('#__content', ['introtext', 'fulltext'], $patterns)
+                    + $this->countArtifacts('#__modules', ['content'], $patterns);
+            } catch (\Exception $e) {
+                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETDEPRECONTENT_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+                $item['error'] = $e->getMessage();
+            }
+        } else {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns the number of template override files (templates/&#42;/html) that use deprecated Joomla APIs.
+     *
+     * @return  array  Array containing result count, link, text/note labels, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getDeprecatedInOverrides(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanDeprecatedOverrides', '1') == '1') {
+            try {
+                $item['icon']          = 'fas fa-code-compare';
+                $item['statusOnFound'] = 'warning';
+                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTTEXT');
+                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTNOTE');
+                $item['link']          = Uri::base() . 'index.php?option=com_templates&view=templates';
+
+                $item['result'] = $this->countDeprecatedOverrides();
+            } catch (\Exception $e) {
+                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETDEPREOVERRIDES_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+                $item['error'] = $e->getMessage();
+            }
+        } else {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns the list of deprecated API tokens to look for.
+     *
+     * Uses the tokens configured in the plugin options (one per line or comma separated);
+     * when the option is empty it falls back to the built-in {@see self::DEPRECATED_TOKENS}.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getDeprecatedTokens(): array
+    {
+        $configured = (string) $this->params->get('deprecatedTokens', '');
+
+        $tokens = array_filter(array_map('trim', preg_split('/[\r\n,]+/', $configured)));
+
+        return $tokens ?: self::DEPRECATED_TOKENS;
+    }
+
+    /**
+     * Counts the template override files (site and administrator) that contain a deprecated Joomla API token.
+     *
+     * Only the "html" override folders of installed templates are scanned, keeping the
+     * filesystem traversal bounded.
+     *
+     * @return  integer  The number of override files containing deprecated tokens.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function countDeprecatedOverrides(): int
+    {
+        $count  = 0;
+        $tokens = $this->getDeprecatedTokens();
+
+        foreach ([JPATH_SITE . '/templates', JPATH_ADMINISTRATOR . '/templates'] as $templatesPath) {
+            if (!is_dir($templatesPath)) {
+                continue;
+            }
+
+            foreach (Folder::folders($templatesPath) as $template) {
+                $htmlPath = $templatesPath . '/' . $template . '/html';
+
+                if (!is_dir($htmlPath)) {
+                    continue;
+                }
+
+                $files = Folder::files($htmlPath, '\.php$', true, true);
+
+                foreach ($files as $file) {
+                    $contents = file_get_contents($file);
+
+                    if ($contents === false) {
+                        continue;
+                    }
+
+                    foreach ($tokens as $token) {
+                        if (str_contains($contents, $token)) {
+                            $count++;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $count;
     }
 
     /**
