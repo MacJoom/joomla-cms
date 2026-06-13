@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="healthcheck" method="upgrade">
+	<name>PLG_HEALTHCHECK_PHPSCANNER</name>
+	<author>Joomla! Project</author>
+	<creationDate>2026-06-13</creationDate>
+	<copyright>(C) 2026 Open Source Matters, Inc.</copyright>
+	<license>GNU General Public License version 2 or later; see LICENSE.txt</license>
+	<authorEmail>admin@joomla.org</authorEmail>
+	<authorUrl>www.joomla.org</authorUrl>
+	<version>1.0.0</version>
+	<description>PLG_HEALTHCHECK_PHPSCANNER_XML_DESCRIPTION</description>
+	<namespace path="src">Joomla\Plugin\Healthcheck\PhpScanner</namespace>
+	<files>
+		<folder plugin="phpscanner">services</folder>
+		<folder>src</folder>
+	</files>
+	<languages>
+		<language tag="en-GB">language/en-GB/plg_healthcheck_phpscanner.ini</language>
+		<language tag="en-GB">language/en-GB/plg_healthcheck_phpscanner.sys.ini</language>
+	</languages>
+	<config>
+		<fields name="params">
+			<fieldset name="basic">
+				<field
+					name="context"
+					type="text"
+					label="PLG_HEALTHCHECK_PHPSCANNER_GROUP_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_GROUP_DESC"
+					default="general"
+				/>
+				<field
+					name="scanArticles"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_ARTICLES_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_ARTICLES_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanModules"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_MODULES_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_MODULES_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanSourcerer"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="logging"
+					type="list"
+					description="PLG_HEALTHCHECK_PHPSCANNER_LOGGING_DESC"
+					label="PLG_HEALTHCHECK_PHPSCANNER_LOGGING_LABEL"
+					default="0"
+				>
+					<option value="0">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_NOLOG</option>
+					<option value="1">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_PHPLOG</option>
+					<option value="2">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_JOOMLALOG</option>
+					<option value="3">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_MESSAGE</option>
+				</field>
+			</fieldset>
+		</fields>
+	</config>
+</extension>
