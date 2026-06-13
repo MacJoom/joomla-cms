@@ -13,6 +13,7 @@ namespace Joomla\Plugin\Healthcheck\PhpScanner\Extension;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Log\Log;
+use Joomla\CMS\Event\Plugin\AjaxEvent;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Uri\Uri;
 use Joomla\Database\DatabaseAwareTrait;
@@ -130,6 +131,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         // which of the available Healthcheck events does the subscriber listen to?
         return [
             'onHealthcheckGetIcons' => 'onHealthcheckGetIcons', //  creates JSON array of QuickIcons
+            'onAjaxPhpscanner'      => 'onAjaxPhpscanner',       //  async loading of the heavy checks
         ];
     }
 
@@ -153,21 +155,123 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
         $this->loadLanguage();
 
+        // Light, query-based checks run inline.
         $checks = [];
 
-        $checks['articles']            = $this->getArticlesWithPhp();
-        $checks['modules']             = $this->getModulesWithPhp();
-        $checks['sourcerer']           = $this->getSourcererTags();
-        $checks['deprecatedcontent']   = $this->getDeprecatedInContent();
-        $checks['deprecatedoverrides'] = $this->getDeprecatedInOverrides();
-        $checks['redefinitions']       = $this->getExtensionsRedefiningClasses();
-        $checks['shims']               = $this->getCompatibilityShims();
+        $checks['articles']          = $this->getArticlesWithPhp();
+        $checks['modules']           = $this->getModulesWithPhp();
+        $checks['sourcerer']         = $this->getSourcererTags();
+        $checks['deprecatedcontent'] = $this->getDeprecatedInContent();
 
-        // Add the buttons to the result array
+        $icons = $this->buildIcons($checks);
+
+        // Heavy, filesystem-scanning checks are loaded asynchronously via com_ajax.
+        foreach ($this->asyncCheckDescriptors() as $key => $descriptor) {
+            if ($this->params->get($descriptor['param'], '1') != '1') {
+                continue;
+            }
+
+            $icons[] = $this->buildAsyncPlaceholder($key, $descriptor);
+        }
+
         $result   = $event->getArgument('result', []);
-        $result[] = $this->buildIcons($checks);
+        $result[] = $icons;
 
         $event->setArgument('result', $result);
+    }
+
+    /**
+     * Asynchronous (com_ajax) entry point for the expensive, filesystem-scanning checks.
+     *
+     * Requested per check via
+     * index.php?option=com_ajax&group=healthcheck&plugin=phpscanner&format=json&check=<key>
+     * so the dashboard renders instantly and fills these icons in the background.
+     *
+     * @param   AjaxEvent  $event  The com_ajax event.
+     *
+     * @return  void
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    public function onAjaxPhpscanner(AjaxEvent $event): void
+    {
+        $app = $this->getApplication();
+
+        // These checks expose site internals, so only serve them to authenticated backend users.
+        if (!$app->isClient('administrator') || $app->getIdentity()->guest) {
+            return;
+        }
+
+        $this->loadLanguage();
+
+        $key = $app->getInput()->getCmd('check', '');
+
+        $result = match ($key) {
+            'deprecatedoverrides' => $this->getDeprecatedInOverrides(),
+            'redefinitions'       => $this->getExtensionsRedefiningClasses(),
+            'shims'               => $this->getCompatibilityShims(),
+            default               => null,
+        };
+
+        if ($result === null || isset($result['error'])) {
+            return;
+        }
+
+        $icons = $this->buildIcons([$key => $result]);
+
+        $event->addResult($icons[0] ?? []);
+    }
+
+    /**
+     * Returns the descriptors of the checks that are loaded asynchronously.
+     *
+     * @return  array  Map of check key => ['param' => string, 'icon' => string, 'text' => string, 'link' => string].
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function asyncCheckDescriptors(): array
+    {
+        return [
+            'deprecatedoverrides' => [
+                'param' => 'scanDeprecatedOverrides',
+                'icon'  => 'fas fa-code-compare',
+                'text'  => 'PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTTEXT',
+                'link'  => 'index.php?option=com_templates&view=templates',
+            ],
+            'redefinitions' => [
+                'param' => 'scanRedefinitions',
+                'icon'  => 'fas fa-clone',
+                'text'  => 'PLG_HEALTHCHECK_PHPSCANNER_REDEFINE_LISTTEXT',
+                'link'  => 'index.php?option=com_installer&view=manage',
+            ],
+            'shims' => [
+                'param' => 'scanShims',
+                'icon'  => 'fas fa-bandage',
+                'text'  => 'PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTTEXT',
+                'link'  => 'index.php?option=com_installer&view=manage',
+            ],
+        ];
+    }
+
+    /**
+     * Builds a spinner placeholder icon whose value is fetched from com_ajax by the module JS.
+     *
+     * @param   string  $key         The check key.
+     * @param   array   $descriptor  The check descriptor (see asyncCheckDescriptors()).
+     *
+     * @return  array  An icon descriptor carrying an "ajaxurl" instead of an "amount".
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function buildAsyncPlaceholder(string $key, array $descriptor): array
+    {
+        return [
+            'link'    => Uri::base() . $descriptor['link'],
+            'icon'    => $descriptor['icon'],
+            'text'    => Text::_($descriptor['text']),
+            'id'      => 'plg_healthcheck_phpscanner_' . $key,
+            'ajaxurl' => Uri::base() . 'index.php?option=com_ajax&group=healthcheck&plugin=phpscanner&format=json&check=' . $key,
+        ];
     }
 
     /**
