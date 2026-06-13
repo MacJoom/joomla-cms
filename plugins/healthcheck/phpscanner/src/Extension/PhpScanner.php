@@ -164,14 +164,31 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         $checks['shims']               = $this->getCompatibilityShims();
 
         // Add the buttons to the result array
-        $result = $event->getArgument('result', []);
+        $result   = $event->getArgument('result', []);
+        $result[] = $this->buildIcons($checks);
 
-        $checkResults = [];
+        $event->setArgument('result', $result);
+    }
+
+    /**
+     * Builds the QuickIcon descriptor array from a map of raw check results.
+     *
+     * @param   array  $checks  Map of check key => result array (as returned by the get*() methods).
+     *
+     * @return  array  List of icon descriptors for the Health Check module.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function buildIcons(array $checks): array
+    {
+        $icons = [];
+
         foreach ($checks as $key => $check) {
             if (isset($check['error'])) {
                 continue;
             }
-            $checkResults[] = [
+
+            $icons[] = [
                 'link'   => $check['link'],
                 'icon'   => $check['icon'] ?? 'fas fa-file-code',
                 'amount' => $check['result'],
@@ -181,9 +198,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
             ];
         }
 
-        $result[] = $checkResults;
-
-        $event->setArgument('result', $result);
+        return $icons;
     }
 
     /**
