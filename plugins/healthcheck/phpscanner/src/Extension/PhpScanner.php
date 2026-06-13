@@ -88,6 +88,37 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     ];
 
     /**
+     * Code fragments that indicate an extension is *redefining* outdated Joomla classes or
+     * functions (a backward-compatibility shim). Matched as literal substrings in PHP files.
+     * These are deliberately high-signal: "class_alias(" alone is too common in bundled
+     * libraries, whereas these are Joomla-specific compat patterns.
+     *
+     * @var    string[]
+     * @since  __DEPLOY_VERSION__
+     */
+    private const REDEFINITION_PATTERNS = [
+        'JLoader::registerAlias(',
+        'function jimport',
+        'function jexit',
+        'function jdebug',
+    ];
+
+    /**
+     * Regular expressions (without delimiters) that match guarded compatibility shims /
+     * polyfills, i.e. a definition wrapped in a negated existence check such as
+     * "if (!function_exists('x')) { function x() {} }". Whitespace tolerant.
+     *
+     * @var    string[]
+     * @since  __DEPLOY_VERSION__
+     */
+    private const SHIM_PATTERNS = [
+        '!\s*function_exists\s*\(',
+        '!\s*class_exists\s*\(',
+        '!\s*interface_exists\s*\(',
+        '!\s*trait_exists\s*\(',
+    ];
+
+    /**
      * Returns an array of events this subscriber will listen to.
      *
      * @return  array
@@ -129,6 +160,8 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         $checks['sourcerer']           = $this->getSourcererTags();
         $checks['deprecatedcontent']   = $this->getDeprecatedInContent();
         $checks['deprecatedoverrides'] = $this->getDeprecatedInOverrides();
+        $checks['redefinitions']       = $this->getExtensionsRedefiningClasses();
+        $checks['shims']               = $this->getCompatibilityShims();
 
         // Add the buttons to the result array
         $result = $event->getArgument('result', []);
@@ -306,6 +339,259 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         }
 
         return $item;
+    }
+
+    /**
+     * Returns the number of installed third-party extensions that redefine outdated Joomla
+     * classes or functions (backward-compatibility shims).
+     *
+     * Core extensions are excluded (they are protected or locked); the legitimate core
+     * compatibility plugin therefore never counts.
+     *
+     * @return  array  Array containing result count, link, text/note labels, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getExtensionsRedefiningClasses(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanRedefinitions', '1') == '1') {
+            try {
+                $item['icon']          = 'fas fa-clone';
+                $item['statusOnFound'] = 'warning';
+                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_REDEFINE_LISTTEXT');
+                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_REDEFINE_LISTNOTE');
+                $item['link']          = Uri::base() . 'index.php?option=com_installer&view=manage';
+
+                $patterns = $this->getRedefinitionPatterns();
+
+                $item['result'] = $this->countNonCoreExtensions(
+                    fn(string $dir): bool => $this->dirHasRedefinition($dir, $patterns)
+                );
+            } catch (\Exception $e) {
+                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETREDEFINE_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+                $item['error'] = $e->getMessage();
+            }
+        } else {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns the number of installed third-party extensions that ship guarded compatibility
+     * shims / polyfills (definitions wrapped in negated function_exists/class_exists/etc. checks).
+     *
+     * @return  array  Array containing result count, link, text/note labels, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getCompatibilityShims(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanShims', '1') == '1') {
+            try {
+                $item['icon']          = 'fas fa-bandage';
+                $item['statusOnFound'] = 'warning';
+                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTTEXT');
+                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTNOTE');
+                $item['link']          = Uri::base() . 'index.php?option=com_installer&view=manage';
+
+                $item['result'] = $this->countNonCoreExtensions(
+                    fn(string $dir): bool => $this->dirHasRegexMatch($dir, self::SHIM_PATTERNS)
+                );
+            } catch (\Exception $e) {
+                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETSHIMS_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+                $item['error'] = $e->getMessage();
+            }
+        } else {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+        }
+
+        return $item;
+    }
+
+    /**
+     * Counts the non-core extensions for which the given file test matches at least one of
+     * their base directories. The plugin's own directory is always skipped.
+     *
+     * @param   callable  $dirTest  A callback receiving a directory and returning a boolean.
+     *
+     * @return  integer
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function countNonCoreExtensions(callable $dirTest): int
+    {
+        // This plugin's own directory contains the pattern strings, so never scan it.
+        $ownDir = realpath(\dirname(__DIR__, 2)) ?: '';
+        $count  = 0;
+
+        foreach ($this->getNonCoreExtensionDirs() as $dirs) {
+            foreach ($dirs as $dir) {
+                if ($ownDir !== '' && realpath($dir) === $ownDir) {
+                    continue;
+                }
+
+                if ($dirTest($dir)) {
+                    $count++;
+                    break;
+                }
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Builds a map of installed non-core extensions to their on-disk base directories.
+     *
+     * Only third-party extensions (not protected and not locked) are returned, so core
+     * extensions - including the backward-compatibility plugin - are never scanned.
+     *
+     * @return  array  Map of extension key => list of existing base directories.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getNonCoreExtensionDirs(): array
+    {
+        $db = $this->getDatabase();
+
+        $query = $db->getQuery(true)
+            ->select($db->quoteName(['type', 'element', 'folder', 'client_id']))
+            ->from($db->quoteName('#__extensions'))
+            ->where($db->quoteName('protected') . ' = 0')
+            ->where($db->quoteName('locked') . ' = 0')
+            ->where($db->quoteName('state') . ' = 0')
+            ->whereIn($db->quoteName('type'), ['component', 'plugin', 'module', 'library', 'template'], ParameterType::STRING);
+
+        $db->setQuery($query);
+
+        $map = [];
+
+        foreach ($db->loadObjectList() as $row) {
+            $dirs = [];
+
+            switch ($row->type) {
+                case 'plugin':
+                    $dirs[] = JPATH_PLUGINS . '/' . $row->folder . '/' . $row->element;
+                    break;
+                case 'module':
+                    $base   = ((int) $row->client_id === 1) ? JPATH_ADMINISTRATOR : JPATH_SITE;
+                    $dirs[] = $base . '/modules/' . $row->element;
+                    break;
+                case 'component':
+                    $dirs[] = JPATH_ADMINISTRATOR . '/components/' . $row->element;
+                    $dirs[] = JPATH_SITE . '/components/' . $row->element;
+                    break;
+                case 'library':
+                    $dirs[] = JPATH_LIBRARIES . '/' . $row->element;
+                    break;
+                case 'template':
+                    $base   = ((int) $row->client_id === 1) ? JPATH_ADMINISTRATOR : JPATH_SITE;
+                    $dirs[] = $base . '/templates/' . $row->element;
+                    break;
+            }
+
+            $key       = $row->type . ':' . $row->folder . ':' . $row->element;
+            $map[$key] = array_values(array_filter($dirs, 'is_dir'));
+        }
+
+        return $map;
+    }
+
+    /**
+     * Returns true if any non-vendor PHP file in the directory contains a redefinition pattern.
+     *
+     * @param   string    $dir       The base directory to scan.
+     * @param   string[]  $patterns  The redefinition patterns to look for.
+     *
+     * @return  boolean
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function dirHasRedefinition(string $dir, array $patterns): bool
+    {
+        if (!is_dir($dir)) {
+            return false;
+        }
+
+        foreach (Folder::files($dir, '\.php$', true, true) as $file) {
+            // Skip bundled third-party libraries, which legitimately use class_alias() etc.
+            if (str_contains($file, \DIRECTORY_SEPARATOR . 'vendor' . \DIRECTORY_SEPARATOR)) {
+                continue;
+            }
+
+            $contents = file_get_contents($file);
+
+            if ($contents === false) {
+                continue;
+            }
+
+            foreach ($patterns as $pattern) {
+                if (str_contains($contents, $pattern)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns true if any non-vendor PHP file in the directory matches one of the regexes.
+     *
+     * @param   string    $dir      The base directory to scan.
+     * @param   string[]  $regexes  Regular expressions without delimiters.
+     *
+     * @return  boolean
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function dirHasRegexMatch(string $dir, array $regexes): bool
+    {
+        if (!is_dir($dir)) {
+            return false;
+        }
+
+        foreach (Folder::files($dir, '\.php$', true, true) as $file) {
+            if (str_contains($file, \DIRECTORY_SEPARATOR . 'vendor' . \DIRECTORY_SEPARATOR)) {
+                continue;
+            }
+
+            $contents = file_get_contents($file);
+
+            if ($contents === false) {
+                continue;
+            }
+
+            foreach ($regexes as $regex) {
+                if (preg_match('/' . $regex . '/', $contents) === 1) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns the configured redefinition patterns, falling back to the built-in defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getRedefinitionPatterns(): array
+    {
+        $configured = (string) $this->params->get('redefinitionPatterns', '');
+
+        $patterns = array_filter(array_map('trim', preg_split('/[\r\n]+/', $configured)));
+
+        return $patterns ?: self::REDEFINITION_PATTERNS;
     }
 
     /**
