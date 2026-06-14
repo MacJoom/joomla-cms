@@ -10,10 +10,10 @@
 
 namespace Joomla\Plugin\Healthcheck\PhpScanner\Extension;
 
+use Joomla\CMS\Event\Plugin\AjaxEvent;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Log\Log;
-use Joomla\CMS\Event\Plugin\AjaxEvent;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Uri\Uri;
 use Joomla\Database\DatabaseAwareTrait;
@@ -27,11 +27,11 @@ use Joomla\Module\Healthcheck\Administrator\Event\HealthChecksEvent;
 // phpcs:enable PSR1.Files.SideEffects
 
 /**
- * Plugin to scan stored content for PHP code artifacts (e.g. "<?php", "<?=").
+ * Health Check plugin that scans content and extensions for PHP/legacy code artifacts.
  *
- * Stored content such as articles or custom modules should never contain executable
- * PHP. The presence of PHP opening tags is a strong indicator of left-over code or a
- * code-injection attempt and should be reviewed.
+ * Content findings (articles and modules) are shown as one quick-icon per matching item,
+ * linking straight to that item's edit screen; for articles an extra summary icon links to
+ * the filtered article list. The filesystem-scanning checks are loaded asynchronously.
  *
  * @since    __DEPLOY_VERSION__
  */
@@ -40,8 +40,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     use DatabaseAwareTrait;
 
     /**
-     * The PHP artifact patterns to look for. These are matched as literal LIKE
-     * fragments ("%" and "_" are the only LIKE wildcards, neither appears here).
+     * PHP artifact LIKE patterns ("%" and "_" are the only LIKE wildcards).
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
@@ -49,9 +48,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     private const PHP_PATTERNS = ['%<?php%', '%<?=%'];
 
     /**
-     * The Sourcerer (Regular Labs) code-tag patterns to look for. Sourcerer executes
-     * PHP/JS embedded in content via "{source}...{/source}" tags, so their presence in
-     * stored content is a code-execution surface worth inventorying.
+     * Sourcerer (Regular Labs) code-tag LIKE patterns.
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
@@ -59,9 +56,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     private const SOURCERER_PATTERNS = ['%{source%'];
 
     /**
-     * Legacy Joomla API tokens treated as "deprecated code". These are the removed/legacy
-     * "J*" classes and loaders from Joomla 3 and earlier. Matched as literal substrings
-     * (in files) and as "%token%" LIKE fragments (in content).
+     * Legacy Joomla "J*" classes/loaders treated as deprecated code.
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
@@ -89,10 +84,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     ];
 
     /**
-     * Code fragments that indicate an extension is *redefining* outdated Joomla classes or
-     * functions (a backward-compatibility shim). Matched as literal substrings in PHP files.
-     * These are deliberately high-signal: "class_alias(" alone is too common in bundled
-     * libraries, whereas these are Joomla-specific compat patterns.
+     * High-signal fragments indicating an extension redefines outdated Joomla classes/functions.
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
@@ -105,9 +97,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     ];
 
     /**
-     * Regular expressions (without delimiters) that match guarded compatibility shims /
-     * polyfills, i.e. a definition wrapped in a negated existence check such as
-     * "if (!function_exists('x')) { function x() {} }". Whitespace tolerant.
+     * Regexes (no delimiters) matching guarded compatibility shims / polyfills, whitespace tolerant.
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
@@ -120,7 +110,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     ];
 
     /**
-     * Returns an array of events this subscriber will listen to.
+     * Returns the events this subscriber listens to.
      *
      * @return  array
      *
@@ -128,15 +118,15 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     public static function getSubscribedEvents(): array
     {
-        // which of the available Healthcheck events does the subscriber listen to?
         return [
-            'onHealthcheckGetIcons' => 'onHealthcheckGetIcons', //  creates JSON array of QuickIcons
+            'onHealthcheckGetIcons' => 'onHealthcheckGetIcons', //  per-item content icons + async placeholders
             'onAjaxPhpscanner'      => 'onAjaxPhpscanner',       //  async loading of the heavy checks
         ];
     }
 
     /**
-     * Returns the array of individual check-results in the layout of "QuickIcons"
+     * Builds the QuickIcons for the matching context: one icon per matching content item, an
+     * article summary icon per issue, and placeholders for the asynchronous filesystem checks.
      *
      * @param   HealthChecksEvent  $event  The health-check event object.
      *
@@ -155,19 +145,12 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
         $this->loadLanguage();
 
-        // Light, query-based checks run inline.
-        $checks = [];
+        // Every check is loaded asynchronously via com_ajax: the module JS fills the count and
+        // opens the matched-item list when the icon is clicked.
+        $icons = [];
 
-        $checks['articles']          = $this->getArticlesWithPhp();
-        $checks['modules']           = $this->getModulesWithPhp();
-        $checks['sourcerer']         = $this->getSourcererTags();
-        $checks['deprecatedcontent'] = $this->getDeprecatedInContent();
-
-        $icons = $this->buildIcons($checks);
-
-        // Heavy, filesystem-scanning checks are loaded asynchronously via com_ajax.
         foreach ($this->asyncCheckDescriptors() as $key => $descriptor) {
-            if ($this->params->get($descriptor['param'], '1') != '1') {
+            if (!$descriptor['enabled']) {
                 continue;
             }
 
@@ -178,6 +161,148 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         $result[] = $icons;
 
         $event->setArgument('result', $result);
+    }
+
+    /**
+     * Runs a content issue (PHP artifacts, Sourcerer tags or deprecated APIs) over articles and
+     * modules and returns the result with one item per matching article/module.
+     *
+     * @param   string  $issue  One of 'phpcontent', 'sourcerer', 'deprecatedcontent'.
+     *
+     * @return  array
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function getContentCheck(string $issue): array
+    {
+        [$patterns, $scanArticles, $scanModules, $status, $icon, $textKey] = match ($issue) {
+            'phpcontent' => [
+                self::PHP_PATTERNS,
+                $this->params->get('scanArticles', '1') == '1',
+                $this->params->get('scanModules', '1') == '1',
+                'error',
+                'fas fa-file-code',
+                'PLG_HEALTHCHECK_PHPSCANNER_PHPCONTENT_LISTTEXT',
+            ],
+            'sourcerer' => [
+                self::SOURCERER_PATTERNS,
+                true,
+                true,
+                'warning',
+                'fas fa-wand-magic-sparkles',
+                'PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT',
+            ],
+            'deprecatedcontent' => [
+                array_map(static fn(string $token): string => '%' . $token . '%', $this->getDeprecatedTokens()),
+                true,
+                true,
+                'warning',
+                'fas fa-clock-rotate-left',
+                'PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTTEXT',
+            ],
+        };
+
+        $items = [];
+
+        if ($scanArticles) {
+            $items = array_merge($items, $this->contentItems('#__content', 'com_content&task=article.edit', 'PLG_HEALTHCHECK_PHPSCANNER_TYPE_ARTICLE', ['introtext', 'fulltext'], $patterns));
+        }
+
+        if ($scanModules) {
+            $items = array_merge($items, $this->contentItems('#__modules', 'com_modules&task=module.edit', 'PLG_HEALTHCHECK_PHPSCANNER_TYPE_MODULE', ['content'], $patterns));
+        }
+
+        return [
+            'icon'          => $icon,
+            'statusOnFound' => $status,
+            'text'          => Text::_($textKey),
+            'link'          => Uri::base() . 'index.php?option=com_content&view=articles',
+            'items'         => $items,
+            'result'        => \count($items),
+        ];
+    }
+
+    /**
+     * Returns matching rows of a content table as items linking to their edit screen.
+     *
+     * @param   string    $table     The (prefixed) table name.
+     * @param   string    $editTask  The com_* option and edit task (e.g. "com_content&task=article.edit").
+     * @param   string    $typeKey   Language key for the item type label.
+     * @param   string[]  $columns   The text columns to scan.
+     * @param   string[]  $patterns  The LIKE patterns to match.
+     *
+     * @return  array
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function contentItems(string $table, string $editTask, string $typeKey, array $columns, array $patterns): array
+    {
+        $items = [];
+
+        foreach ($this->findMatchingRows($table, $columns, $patterns) as $row) {
+            $items[] = [
+                'title' => Text::_($typeKey) . ': ' . $this->shorten($row->title),
+                'link'  => Uri::base() . 'index.php?option=' . $editTask . '&id=' . (int) $row->id,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * Truncates a title so per-item icons stay compact.
+     *
+     * @param   string  $title  The item title.
+     *
+     * @return  string
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function shorten(string $title): string
+    {
+        return mb_strlen($title) > 40 ? mb_substr($title, 0, 39) . "\u{2026}" : $title;
+    }
+
+    /**
+     * Returns the id and title of rows where any of the columns contains one of the patterns.
+     *
+     * @param   string    $table     The (prefixed) table name.
+     * @param   string[]  $columns   The text columns to scan.
+     * @param   string[]  $patterns  The LIKE patterns to match.
+     *
+     * @return  object[]  Capped at 100 rows.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function findMatchingRows(string $table, array $columns, array $patterns): array
+    {
+        $db = $this->getDatabase();
+
+        $query = $db->getQuery(true)
+            ->select($db->quoteName(['id', 'title']))
+            ->from($db->quoteName($table));
+
+        $values     = [];
+        $conditions = [];
+        $i          = 0;
+
+        foreach ($columns as $column) {
+            foreach ($patterns as $pattern) {
+                $key          = ':row' . $i;
+                $values[$i]   = $pattern;
+                $conditions[] = $db->quoteName($column) . ' LIKE ' . $key;
+
+                $query->bind($key, $values[$i], ParameterType::STRING);
+
+                $i++;
+            }
+        }
+
+        $query->where('(' . implode(' OR ', $conditions) . ')');
+
+        $db->setQuery($query, 0, 100);
+
+        return $db->loadObjectList();
     }
 
     /**
@@ -207,6 +332,9 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         $key = $app->getInput()->getCmd('check', '');
 
         $result = match ($key) {
+            'phpcontent'          => $this->getContentCheck('phpcontent'),
+            'sourcerer'           => $this->getContentCheck('sourcerer'),
+            'deprecatedcontent'   => $this->getContentCheck('deprecatedcontent'),
             'deprecatedoverrides' => $this->getDeprecatedInOverrides(),
             'redefinitions'       => $this->getExtensionsRedefiningClasses(),
             'shims'               => $this->getCompatibilityShims(),
@@ -232,23 +360,41 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     private function asyncCheckDescriptors(): array
     {
         return [
+            'phpcontent' => [
+                'enabled' => $this->params->get('scanArticles', '1') == '1' || $this->params->get('scanModules', '1') == '1',
+                'icon'    => 'fas fa-file-code',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_PHPCONTENT_LISTTEXT',
+                'link'    => 'index.php?option=com_content&view=articles',
+            ],
+            'sourcerer' => [
+                'enabled' => $this->params->get('scanSourcerer', '1') == '1',
+                'icon'    => 'fas fa-wand-magic-sparkles',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT',
+                'link'    => 'index.php?option=com_content&view=articles',
+            ],
+            'deprecatedcontent' => [
+                'enabled' => $this->params->get('scanDeprecatedContent', '1') == '1',
+                'icon'    => 'fas fa-clock-rotate-left',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTTEXT',
+                'link'    => 'index.php?option=com_content&view=articles',
+            ],
             'deprecatedoverrides' => [
-                'param' => 'scanDeprecatedOverrides',
-                'icon'  => 'fas fa-code-compare',
-                'text'  => 'PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTTEXT',
-                'link'  => 'index.php?option=com_templates&view=templates',
+                'enabled' => $this->params->get('scanDeprecatedOverrides', '1') == '1',
+                'icon'    => 'fas fa-code-compare',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTTEXT',
+                'link'    => 'index.php?option=com_templates&view=templates',
             ],
             'redefinitions' => [
-                'param' => 'scanRedefinitions',
-                'icon'  => 'fas fa-clone',
-                'text'  => 'PLG_HEALTHCHECK_PHPSCANNER_REDEFINE_LISTTEXT',
-                'link'  => 'index.php?option=com_installer&view=manage',
+                'enabled' => $this->params->get('scanRedefinitions', '1') == '1',
+                'icon'    => 'fas fa-clone',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_REDEFINE_LISTTEXT',
+                'link'    => 'index.php?option=com_installer&view=manage',
             ],
             'shims' => [
-                'param' => 'scanShims',
-                'icon'  => 'fas fa-bandage',
-                'text'  => 'PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTTEXT',
-                'link'  => 'index.php?option=com_installer&view=manage',
+                'enabled' => $this->params->get('scanShims', '1') == '1',
+                'icon'    => 'fas fa-bandage',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTTEXT',
+                'link'    => 'index.php?option=com_installer&view=manage',
             ],
         ];
     }
@@ -275,11 +421,11 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Builds the QuickIcon descriptor array from a map of raw check results.
+     * Builds QuickIcon descriptors from a map of raw check results (used by the async endpoint).
      *
      * @param   array  $checks  Map of check key => result array (as returned by the get*() methods).
      *
-     * @return  array  List of icon descriptors for the Health Check module.
+     * @return  array
      *
      * @since    __DEPLOY_VERSION__
      */
@@ -292,141 +438,31 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 continue;
             }
 
-            $icons[] = [
-                'link'   => $check['link'],
+            $found = (int) $check['result'] > 0;
+
+            $icon = [
+                'link'   => $found ? $check['link'] : '#',
                 'icon'   => $check['icon'] ?? 'fas fa-file-code',
                 'amount' => $check['result'],
                 'text'   => $check['text'],
                 'id'     => 'plg_healthcheck_phpscanner_' . strtolower($key),
-                'status' => ($check['result'] > 0) ? ($check['statusOnFound'] ?? 'critical') : 'success',
+                'status' => $found ? ($check['statusOnFound'] ?? 'error') : 'success',
             ];
+
+            // Nothing to drill into when the count is zero, so make the icon non-interactive.
+            if (!$found) {
+                $icon['class'] = 'pe-none';
+            }
+
+            // The matched items (the module JS opens this list when the icon is clicked).
+            if (!empty($check['items'])) {
+                $icon['items'] = $check['items'];
+            }
+
+            $icons[] = $icon;
         }
 
         return $icons;
-    }
-
-    /**
-     * Returns the number of articles whose intro or full text contains PHP artifacts.
-     *
-     * @return  array  Array containing result count, link, text/note labels, or an error key.
-     *
-     * @since    __DEPLOY_VERSION__
-     */
-    protected function getArticlesWithPhp(): array
-    {
-        $item = [];
-
-        if ($this->params->get('scanArticles', '1') == '1') {
-            try {
-                $item['text'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_ARTICLES_LISTTEXT');
-                $item['note'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_ARTICLES_LISTNOTE');
-                $item['link'] = Uri::base() . 'index.php?option=com_content&view=articles';
-
-                $item['result'] = $this->countArtifacts('#__content', ['introtext', 'fulltext'], self::PHP_PATTERNS);
-            } catch (\Exception $e) {
-                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETARTICLES_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
-                $item['error'] = $e->getMessage();
-            }
-        } else {
-            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
-        }
-
-        return $item;
-    }
-
-    /**
-     * Returns the number of modules whose content contains PHP artifacts.
-     *
-     * @return  array  Array containing result count, link, text/note labels, or an error key.
-     *
-     * @since    __DEPLOY_VERSION__
-     */
-    protected function getModulesWithPhp(): array
-    {
-        $item = [];
-
-        if ($this->params->get('scanModules', '1') == '1') {
-            try {
-                $item['text'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_MODULES_LISTTEXT');
-                $item['note'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_MODULES_LISTNOTE');
-                $item['link'] = Uri::base() . 'index.php?option=com_modules&view=modules';
-
-                $item['result'] = $this->countArtifacts('#__modules', ['content'], self::PHP_PATTERNS);
-            } catch (\Exception $e) {
-                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETMODULES_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
-                $item['error'] = $e->getMessage();
-            }
-        } else {
-            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
-        }
-
-        return $item;
-    }
-
-    /**
-     * Returns the number of articles and modules whose content contains Sourcerer code tags.
-     *
-     * @return  array  Array containing result count, link, text/note labels, or an error key.
-     *
-     * @since    __DEPLOY_VERSION__
-     */
-    protected function getSourcererTags(): array
-    {
-        $item = [];
-
-        if ($this->params->get('scanSourcerer', '1') == '1') {
-            try {
-                $item['icon']          = 'fas fa-wand-magic-sparkles';
-                $item['statusOnFound'] = 'warning';
-                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT');
-                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTNOTE');
-                $item['link']          = Uri::base() . 'index.php?option=com_content&view=articles';
-
-                $item['result'] = $this->countArtifacts('#__content', ['introtext', 'fulltext'], self::SOURCERER_PATTERNS)
-                    + $this->countArtifacts('#__modules', ['content'], self::SOURCERER_PATTERNS);
-            } catch (\Exception $e) {
-                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETSOURCERER_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
-                $item['error'] = $e->getMessage();
-            }
-        } else {
-            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
-        }
-
-        return $item;
-    }
-
-    /**
-     * Returns the number of articles and modules whose embedded code uses deprecated Joomla APIs.
-     *
-     * @return  array  Array containing result count, link, text/note labels, or an error key.
-     *
-     * @since    __DEPLOY_VERSION__
-     */
-    protected function getDeprecatedInContent(): array
-    {
-        $item = [];
-
-        if ($this->params->get('scanDeprecatedContent', '1') == '1') {
-            try {
-                $item['icon']          = 'fas fa-clock-rotate-left';
-                $item['statusOnFound'] = 'warning';
-                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTTEXT');
-                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTNOTE');
-                $item['link']          = Uri::base() . 'index.php?option=com_content&view=articles';
-
-                $patterns = array_map(static fn(string $token): string => '%' . $token . '%', $this->getDeprecatedTokens());
-
-                $item['result'] = $this->countArtifacts('#__content', ['introtext', 'fulltext'], $patterns)
-                    + $this->countArtifacts('#__modules', ['content'], $patterns);
-            } catch (\Exception $e) {
-                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETDEPRECONTENT_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
-                $item['error'] = $e->getMessage();
-            }
-        } else {
-            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
-        }
-
-        return $item;
     }
 
     /**
@@ -448,7 +484,8 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTNOTE');
                 $item['link']          = Uri::base() . 'index.php?option=com_templates&view=templates';
 
-                $item['result'] = $this->countDeprecatedOverrides();
+                $item['items']  = $this->overrideItems();
+                $item['result'] = \count($item['items']);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETDEPREOVERRIDES_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
                 $item['error'] = $e->getMessage();
@@ -462,10 +499,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
     /**
      * Returns the number of installed third-party extensions that redefine outdated Joomla
-     * classes or functions (backward-compatibility shims).
-     *
-     * Core extensions are excluded (they are protected or locked); the legitimate core
-     * compatibility plugin therefore never counts.
+     * classes or functions (core extensions are excluded).
      *
      * @return  array  Array containing result count, link, text/note labels, or an error key.
      *
@@ -485,9 +519,8 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
                 $patterns = $this->getRedefinitionPatterns();
 
-                $item['result'] = $this->countNonCoreExtensions(
-                    fn(string $dir): bool => $this->dirHasRedefinition($dir, $patterns)
-                );
+                $item['items']  = $this->extensionItems(fn(string $dir): bool => $this->dirHasRedefinition($dir, $patterns));
+                $item['result'] = \count($item['items']);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETREDEFINE_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
                 $item['error'] = $e->getMessage();
@@ -500,8 +533,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Returns the number of installed third-party extensions that ship guarded compatibility
-     * shims / polyfills (definitions wrapped in negated function_exists/class_exists/etc. checks).
+     * Returns the number of installed third-party extensions that ship guarded compatibility shims.
      *
      * @return  array  Array containing result count, link, text/note labels, or an error key.
      *
@@ -519,9 +551,8 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTNOTE');
                 $item['link']          = Uri::base() . 'index.php?option=com_installer&view=manage';
 
-                $item['result'] = $this->countNonCoreExtensions(
-                    fn(string $dir): bool => $this->dirHasRegexMatch($dir, self::SHIM_PATTERNS)
-                );
+                $item['items']  = $this->extensionItems(fn(string $dir): bool => $this->dirHasRegexMatch($dir, self::SHIM_PATTERNS));
+                $item['result'] = \count($item['items']);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETSHIMS_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
                 $item['error'] = $e->getMessage();
@@ -534,8 +565,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Counts the non-core extensions for which the given file test matches at least one of
-     * their base directories. The plugin's own directory is always skipped.
+     * Counts the non-core extensions matched by the given file test.
      *
      * @param   callable  $dirTest  A callback receiving a directory and returning a boolean.
      *
@@ -545,42 +575,83 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     protected function countNonCoreExtensions(callable $dirTest): int
     {
-        // This plugin's own directory contains the pattern strings, so never scan it.
-        $ownDir = realpath(\dirname(__DIR__, 2)) ?: '';
-        $count  = 0;
+        return \count($this->matchedExtensions($dirTest));
+    }
 
-        foreach ($this->getNonCoreExtensionDirs() as $dirs) {
-            foreach ($dirs as $dir) {
+    /**
+     * Returns the matched non-core extensions as items (title + link to the extension).
+     *
+     * @param   callable  $dirTest  A callback receiving a directory and returning a boolean.
+     *
+     * @return  array
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function extensionItems(callable $dirTest): array
+    {
+        $items = [];
+
+        foreach ($this->matchedExtensions($dirTest) as $ext) {
+            if ($ext->type === 'plugin') {
+                $link = Uri::base() . 'index.php?option=com_plugins&task=plugin.edit&extension_id=' . (int) $ext->extension_id;
+            } else {
+                $link = Uri::base() . 'index.php?option=com_installer&view=manage&filter[search]=' . rawurlencode($ext->element);
+            }
+
+            $items[] = [
+                'title' => Text::_($ext->name),
+                'link'  => $link,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * Returns the non-core extensions for which the file test matches a base directory.
+     * The plugin's own directory is always skipped.
+     *
+     * @param   callable  $dirTest  A callback receiving a directory and returning a boolean.
+     *
+     * @return  object[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function matchedExtensions(callable $dirTest): array
+    {
+        // This plugin's own directory contains the pattern strings, so never scan it.
+        $ownDir  = realpath(\dirname(__DIR__, 2)) ?: '';
+        $matched = [];
+
+        foreach ($this->getNonCoreExtensions() as $ext) {
+            foreach ($ext->dirs as $dir) {
                 if ($ownDir !== '' && realpath($dir) === $ownDir) {
                     continue;
                 }
 
                 if ($dirTest($dir)) {
-                    $count++;
+                    $matched[] = $ext;
                     break;
                 }
             }
         }
 
-        return $count;
+        return $matched;
     }
 
     /**
-     * Builds a map of installed non-core extensions to their on-disk base directories.
+     * Returns installed non-core (not protected, not locked) extensions with their base directories.
      *
-     * Only third-party extensions (not protected and not locked) are returned, so core
-     * extensions - including the backward-compatibility plugin - are never scanned.
-     *
-     * @return  array  Map of extension key => list of existing base directories.
+     * @return  object[]  Each row carries extension_id, name, type, element, folder and a "dirs" array.
      *
      * @since    __DEPLOY_VERSION__
      */
-    protected function getNonCoreExtensionDirs(): array
+    protected function getNonCoreExtensions(): array
     {
         $db = $this->getDatabase();
 
         $query = $db->getQuery(true)
-            ->select($db->quoteName(['type', 'element', 'folder', 'client_id']))
+            ->select($db->quoteName(['extension_id', 'name', 'type', 'element', 'folder', 'client_id']))
             ->from($db->quoteName('#__extensions'))
             ->where($db->quoteName('protected') . ' = 0')
             ->where($db->quoteName('locked') . ' = 0')
@@ -589,7 +660,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
         $db->setQuery($query);
 
-        $map = [];
+        $extensions = [];
 
         foreach ($db->loadObjectList() as $row) {
             $dirs = [];
@@ -615,11 +686,11 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                     break;
             }
 
-            $key       = $row->type . ':' . $row->folder . ':' . $row->element;
-            $map[$key] = array_values(array_filter($dirs, 'is_dir'));
+            $row->dirs    = array_values(array_filter($dirs, 'is_dir'));
+            $extensions[] = $row;
         }
 
-        return $map;
+        return $extensions;
     }
 
     /**
@@ -714,10 +785,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Returns the list of deprecated API tokens to look for.
-     *
-     * Uses the tokens configured in the plugin options (one per line or comma separated);
-     * when the option is empty it falls back to the built-in {@see self::DEPRECATED_TOKENS}.
+     * Returns the configured deprecated API tokens, falling back to the built-in defaults.
      *
      * @return  string[]
      *
@@ -733,21 +801,19 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Counts the template override files (site and administrator) that contain a deprecated Joomla API token.
+     * Returns the template override files containing a deprecated token as items, each linking
+     * to that file in the template editor.
      *
-     * Only the "html" override folders of installed templates are scanned, keeping the
-     * filesystem traversal bounded.
-     *
-     * @return  integer  The number of override files containing deprecated tokens.
+     * @return  array
      *
      * @since    __DEPLOY_VERSION__
      */
-    protected function countDeprecatedOverrides(): int
+    private function overrideItems(): array
     {
-        $count  = 0;
+        $items  = [];
         $tokens = $this->getDeprecatedTokens();
 
-        foreach ([JPATH_SITE . '/templates', JPATH_ADMINISTRATOR . '/templates'] as $templatesPath) {
+        foreach ([JPATH_SITE . '/templates' => 0, JPATH_ADMINISTRATOR . '/templates' => 1] as $templatesPath => $clientId) {
             if (!is_dir($templatesPath)) {
                 continue;
             }
@@ -759,9 +825,9 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                     continue;
                 }
 
-                $files = Folder::files($htmlPath, '\.php$', true, true);
+                $extensionId = $this->templateExtensionId($template, $clientId);
 
-                foreach ($files as $file) {
+                foreach (Folder::files($htmlPath, '\.php$', true, true) as $file) {
                     $contents = file_get_contents($file);
 
                     if ($contents === false) {
@@ -770,7 +836,15 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
                     foreach ($tokens as $token) {
                         if (str_contains($contents, $token)) {
-                            $count++;
+                            $relative = 'html/' . ltrim(str_replace('\\', '/', substr($file, \strlen($htmlPath))), '/');
+
+                            $items[] = [
+                                'title' => $template . ': ' . $relative,
+                                'link'  => $extensionId
+                                    ? Uri::base() . 'index.php?option=com_templates&view=template&id=' . $extensionId . '&file=' . rawurlencode(base64_encode('/' . $relative))
+                                    : Uri::base() . 'index.php?option=com_templates&view=templates',
+                            ];
+
                             break;
                         }
                     }
@@ -778,46 +852,31 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
             }
         }
 
-        return $count;
+        return $items;
     }
 
     /**
-     * Counts the rows of a table where any of the given columns contains one of the patterns.
+     * Returns the extension_id of an installed template, or 0 when not found.
      *
-     * @param   string    $table     The (prefixed) table name, e.g. "#__content".
-     * @param   string[]  $columns   The text columns to scan.
-     * @param   string[]  $patterns  The LIKE patterns to match (e.g. self::PHP_PATTERNS).
+     * @param   string   $template  The template element.
+     * @param   integer  $clientId  0 for site, 1 for administrator.
      *
-     * @return  integer  The number of matching rows.
+     * @return  integer
      *
      * @since    __DEPLOY_VERSION__
      */
-    protected function countArtifacts(string $table, array $columns, array $patterns): int
+    private function templateExtensionId(string $template, int $clientId): int
     {
         $db = $this->getDatabase();
 
         $query = $db->getQuery(true)
-            ->select('COUNT(*) AS ' . $db->quoteName('number'))
-            ->from($db->quoteName($table));
-
-        // Keep the bound values alive in this array so the by-reference binding stays valid.
-        $values     = [];
-        $conditions = [];
-        $i          = 0;
-
-        foreach ($columns as $column) {
-            foreach ($patterns as $pattern) {
-                $key          = ':artifact' . $i;
-                $values[$i]   = $pattern;
-                $conditions[] = $db->quoteName($column) . ' LIKE ' . $key;
-
-                $query->bind($key, $values[$i], ParameterType::STRING);
-
-                $i++;
-            }
-        }
-
-        $query->where('(' . implode(' OR ', $conditions) . ')');
+            ->select($db->quoteName('extension_id'))
+            ->from($db->quoteName('#__extensions'))
+            ->where($db->quoteName('type') . ' = ' . $db->quote('template'))
+            ->where($db->quoteName('element') . ' = :element')
+            ->where($db->quoteName('client_id') . ' = :client')
+            ->bind(':element', $template, ParameterType::STRING)
+            ->bind(':client', $clientId, ParameterType::INTEGER);
 
         $db->setQuery($query);
 
