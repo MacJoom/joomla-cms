@@ -165,3 +165,18 @@
     transition: none !important;
   }
 }
+
+/* Async item list (opened when a quick-icon is clicked) */
+
+.health-checks .healthcheck-itemlist {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.health-checks .healthcheck-itemlist li {
+  padding: 0.1rem 0;
+}
+
+.health-checks .healthcheck-itemlist a {
+  text-decoration: none;
+}
