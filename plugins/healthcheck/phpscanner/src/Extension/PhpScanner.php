@@ -21,6 +21,9 @@ use Joomla\Database\ParameterType;
 use Joomla\Event\SubscriberInterface;
 use Joomla\Filesystem\Folder;
 use Joomla\Module\Healthcheck\Administrator\Event\HealthChecksEvent;
+use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\ExtensionInventory;
+use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\MalwareScanner;
+use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\RecentFileScanner;
 
 // phpcs:disable PSR1.Files.SideEffects
 \defined('_JEXEC') or die;
@@ -338,6 +341,9 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
             'deprecatedoverrides' => $this->getDeprecatedInOverrides(),
             'redefinitions'       => $this->getExtensionsRedefiningClasses(),
             'shims'               => $this->getCompatibilityShims(),
+            'malware'             => $this->getMalwareCheck(),
+            'recentfiles'         => $this->getRecentFilesCheck(),
+            'extensions'          => $this->getInstalledExtensionsCheck(),
             default               => null,
         };
 
@@ -394,6 +400,24 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 'enabled' => $this->params->get('scanShims', '1') == '1',
                 'icon'    => 'fas fa-bandage',
                 'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTTEXT',
+                'link'    => 'index.php?option=com_installer&view=manage',
+            ],
+            'malware' => [
+                'enabled' => $this->params->get('scanMalware', '1') == '1',
+                'icon'    => 'fas fa-bug',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_MALWARE_LISTTEXT',
+                'link'    => 'index.php?option=com_admin&view=sysinfo',
+            ],
+            'recentfiles' => [
+                'enabled' => $this->params->get('scanRecentFiles', '1') == '1',
+                'icon'    => 'fas fa-file-circle-plus',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_LISTTEXT',
+                'link'    => 'index.php?option=com_admin&view=sysinfo',
+            ],
+            'extensions' => [
+                'enabled' => $this->params->get('scanExtensionList', '1') == '1',
+                'icon'    => 'fas fa-list',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_EXTLIST_LISTTEXT',
                 'link'    => 'index.php?option=com_installer&view=manage',
             ],
         ];
@@ -555,6 +579,265 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 $item['result'] = \count($item['items']);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETSHIMS_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+                $item['error'] = $e->getMessage();
+            }
+        } else {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns suspicious (possible-malware) PHP files found anywhere under the site root.
+     *
+     * The full-site walk is cached so it runs at most once per TTL (it is also refreshed by the
+     * scheduled-task plugin), since arbitrary-path upload flaws can drop shells outside the usual
+     * writable folders.
+     *
+     * @return  array  Array containing result count, link, text/note labels, items, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getMalwareCheck(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanMalware', '1') == '1') {
+            try {
+                $item['icon']          = 'fas fa-bug';
+                $item['statusOnFound'] = 'error';
+                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_MALWARE_LISTTEXT');
+                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_MALWARE_LISTNOTE');
+                $item['link']          = Uri::base() . 'index.php?option=com_admin&view=sysinfo';
+
+                $files = $this->malwareScanResult();
+
+                // Suspicious files have no admin edit screen, so the item is the path only (no link).
+                $item['items']  = array_map(static fn(array $file): array => ['title' => $file['path'], 'link' => ''], $files);
+                $item['result'] = \count($files);
+            } catch (\Exception $e) {
+                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETMALWARE_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+                $item['error'] = $e->getMessage();
+            }
+        } else {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns the cached malware-scan result, running (and caching) a fresh full-site scan when stale.
+     *
+     * @return  array  List of ['path' => string] items.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function malwareScanResult(): array
+    {
+        $cacheFile = JPATH_CACHE . '/phpscanner_malware.json';
+        $ttl       = 21600; // 6 hours
+
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+            $data = json_decode((string) file_get_contents($cacheFile), true);
+
+            if (\is_array($data)) {
+                return $data;
+            }
+        }
+
+        $items = (new MalwareScanner($this->malwareSignatures(), $this->malwareExcludes()))->scan(JPATH_ROOT);
+
+        @file_put_contents($cacheFile, json_encode($items));
+
+        return $items;
+    }
+
+    /**
+     * Returns the configured malware signatures, falling back to the built-in defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function malwareSignatures(): array
+    {
+        $configured = (string) $this->params->get('malwareSignatures', '');
+        $list       = array_filter(array_map('trim', preg_split('/[\r\n]+/', $configured)));
+
+        return $list ?: MalwareScanner::DEFAULT_SIGNATURES;
+    }
+
+    /**
+     * Returns the configured excluded directory names, falling back to the built-in defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function malwareExcludes(): array
+    {
+        $configured = (string) $this->params->get('malwareExcludes', '');
+        $list       = array_filter(array_map('trim', preg_split('/[\r\n,]+/', $configured)));
+
+        return $list ?: MalwareScanner::DEFAULT_EXCLUDES;
+    }
+
+    /**
+     * Returns PHP files that don't look like part of a regular install: orphans (owned by no
+     * registered extension) or files modified after their owning extension was installed.
+     *
+     * A registered extension whose usual files exist (manifest, src, language) is trusted; what is
+     * reported is anything outside that structure, a classic indicator of a planted shell. The
+     * result is cached and refreshed like the malware scan.
+     *
+     * @return  array  Array containing result count, link, text/note labels, items, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getRecentFilesCheck(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanRecentFiles', '1') == '1') {
+            try {
+                $item['icon']          = 'fas fa-file-circle-plus';
+                $item['statusOnFound'] = 'warning';
+                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_LISTTEXT');
+                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_LISTNOTE');
+                $item['link']          = Uri::base() . 'index.php?option=com_admin&view=sysinfo';
+
+                $files = $this->recentFilesScanResult();
+
+                $reasons = [
+                    'orphan'  => Text::_('PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_REASON_ORPHAN'),
+                    'changed' => Text::_('PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_REASON_CHANGED'),
+                ];
+
+                // These have no admin edit screen, so render date, reason and path as plain copyable text.
+                $item['items'] = array_map(
+                    static fn(array $file): array => [
+                        'title' => date('Y-m-d H:i', $file['mtime']) . '  [' . ($reasons[$file['reason']] ?? $file['reason']) . ']  ' . $file['path'],
+                        'link'  => '',
+                    ],
+                    $files
+                );
+                $item['result'] = \count($files);
+            } catch (\Exception $e) {
+                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETRECENTFILES_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+                $item['error'] = $e->getMessage();
+            }
+        } else {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns the cached recent-files result, running (and caching) a fresh ownership-aware walk
+     * when stale.
+     *
+     * @return  array  List of ['path' => string, 'mtime' => int, 'reason' => string] items.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function recentFilesScanResult(): array
+    {
+        $cacheFile = JPATH_CACHE . '/phpscanner_recentfiles.json';
+        $ttl       = 21600; // 6 hours
+
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+            $data = json_decode((string) file_get_contents($cacheFile), true);
+
+            if (\is_array($data)) {
+                return $data;
+            }
+        }
+
+        $coreMtime = $this->coreUpdateTime();
+        $owners    = (new ExtensionInventory($this->getDatabase(), JPATH_ROOT))->ownership($coreMtime);
+
+        $items = (new RecentFileScanner(
+            $owners,
+            $coreMtime,
+            RecentFileScanner::DEFAULT_CORE_PREFIXES,
+            $this->recentFilesExcludes()
+        ))->scan(JPATH_ROOT);
+
+        @file_put_contents($cacheFile, json_encode($items));
+
+        return $items;
+    }
+
+    /**
+     * Returns the mtime of the core manifest (the last core update), used as the reference for
+     * core-owned files.
+     *
+     * @return  integer  A Unix timestamp, or 0 when it cannot be determined.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function coreUpdateTime(): int
+    {
+        $core = JPATH_ADMINISTRATOR . '/manifests/files/joomla.xml';
+
+        return is_file($core) ? (int) filemtime($core) : 0;
+    }
+
+    /**
+     * Returns the configured excluded directory names, falling back to the built-in defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function recentFilesExcludes(): array
+    {
+        $configured = (string) $this->params->get('recentFilesExcludes', '');
+        $list       = array_filter(array_map('trim', preg_split('/[\r\n,]+/', $configured)));
+
+        return $list ?: RecentFileScanner::DEFAULT_EXCLUDES;
+    }
+
+    /**
+     * Returns the installed extensions with their install/update time (the mtime of their manifest).
+     *
+     * @return  array  Array containing result count, link, text/note labels, items, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getInstalledExtensionsCheck(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanExtensionList', '1') == '1') {
+            try {
+                $item['icon']          = 'fas fa-list';
+                $item['statusOnFound'] = 'info';
+                $item['text']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_EXTLIST_LISTTEXT');
+                $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_EXTLIST_LISTNOTE');
+                $item['link']          = Uri::base() . 'index.php?option=com_installer&view=manage';
+
+                $extensions = (new ExtensionInventory($this->getDatabase(), JPATH_ROOT))->list();
+
+                usort($extensions, static fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+
+                $item['items'] = array_map(
+                    static function (array $ext): array {
+                        $when = $ext['mtime'] ? date('Y-m-d H:i', $ext['mtime']) : '----------';
+
+                        return [
+                            'title' => $when . '  ' . $ext['element'] . ' (' . $ext['type'] . ')',
+                            'link'  => Uri::base() . 'index.php?option=com_installer&view=manage&filter[search]=' . rawurlencode($ext['element']),
+                        ];
+                    },
+                    $extensions
+                );
+                $item['result'] = \count($extensions);
+            } catch (\Exception $e) {
+                $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETEXTLIST_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
                 $item['error'] = $e->getMessage();
             }
         } else {
