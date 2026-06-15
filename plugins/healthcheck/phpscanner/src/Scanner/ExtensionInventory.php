@@ -47,7 +47,9 @@ final class ExtensionInventory
     public function list(): array
     {
         $query = $this->db->getQuery(true)
-            ->select($this->db->quoteName(['name', 'type', 'element', 'folder', 'client_id', 'protected']))
+            ->select($this->db->quoteName(
+                ['extension_id', 'package_id', 'name', 'type', 'element', 'folder', 'client_id', 'protected', 'locked', 'state']
+            ))
             ->from($this->db->quoteName('#__extensions'))
             ->where($this->db->quoteName('element') . ' != ' . $this->db->quote(''));
 
@@ -62,15 +64,20 @@ final class ExtensionInventory
                 : 0;
 
             $out[] = [
-                'name'      => $row->name,
-                'type'      => $row->type,
-                'element'   => $row->element,
-                'folder'    => $row->folder,
-                'client'    => (int) $row->client_id,
-                'protected' => (int) $row->protected,
-                'dirs'      => $dirs,
-                'manifest'  => $manifest,
-                'mtime'     => $mtime,
+                'extension_id' => (int) $row->extension_id,
+                'package_id'   => (int) $row->package_id,
+                'name'         => $row->name,
+                'label'        => $this->label($row),
+                'type'         => $row->type,
+                'element'      => $row->element,
+                'folder'       => $row->folder,
+                'client'       => (int) $row->client_id,
+                'protected'    => (int) $row->protected,
+                'locked'       => (int) $row->locked,
+                'state'        => (int) $row->state,
+                'dirs'         => $dirs,
+                'manifest'     => $manifest,
+                'mtime'        => $mtime,
             ];
         }
 
@@ -175,6 +182,47 @@ final class ExtensionInventory
             default:
                 return [[], null];
         }
+    }
+
+    /**
+     * Builds the canonical extension name for display (e.g. plg_healthcheck_phpscanner), so the
+     * plugin group / extension type is never ambiguous.
+     *
+     * @param   object  $row  An #__extensions row.
+     *
+     * @return  string
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function label(object $row): string
+    {
+        return match ($row->type) {
+            'plugin'   => 'plg_' . $row->folder . '_' . $row->element,
+            'template' => 'tpl_' . $row->element,
+            'library'  => 'lib_' . $row->element,
+            'file'     => 'files_' . $row->element,
+            'language' => 'lang_' . $row->element . '/' . $this->clientName((int) $row->client_id),
+            default    => $row->element,
+        };
+    }
+
+    /**
+     * Maps a client id to its name (languages and modules install separately per client).
+     *
+     * @param   integer  $clientId  The #__extensions client_id.
+     *
+     * @return  string
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function clientName(int $clientId): string
+    {
+        return match ($clientId) {
+            0       => 'site',
+            1       => 'administrator',
+            3       => 'api',
+            default => 'client' . $clientId,
+        };
     }
 
     /**

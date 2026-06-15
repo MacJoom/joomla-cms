@@ -822,19 +822,13 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
                 $extensions = (new ExtensionInventory($this->getDatabase(), JPATH_ROOT))->list();
 
-                usort($extensions, static fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+                // Only third-party extensions are of interest; core ones are locked (or protected).
+                $extensions = array_values(array_filter(
+                    $extensions,
+                    static fn(array $e): bool => $e['protected'] === 0 && $e['locked'] === 0 && $e['state'] === 0
+                ));
 
-                $item['items'] = array_map(
-                    static function (array $ext): array {
-                        $when = $ext['mtime'] ? date('Y-m-d H:i', $ext['mtime']) : '----------';
-
-                        return [
-                            'title' => $when . '  ' . $ext['element'] . ' (' . $ext['type'] . ')',
-                            'link'  => Uri::base() . 'index.php?option=com_installer&view=manage&filter[search]=' . rawurlencode($ext['element']),
-                        ];
-                    },
-                    $extensions
-                );
+                $item['items']  = $this->groupExtensionItems($extensions);
                 $item['result'] = \count($extensions);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETEXTLIST_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
@@ -845,6 +839,133 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         }
 
         return $item;
+    }
+
+    /**
+     * Turns the flat extension inventory into a grouped item list: package children are nested under
+     * their parent package, standalone extensions are listed on their own, all newest first.
+     *
+     * @param   array  $extensions  The inventory from ExtensionInventory::list().
+     *
+     * @return  array  List of ['title' => string, 'link' => string] items.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function groupExtensionItems(array $extensions): array
+    {
+        $children = [];
+        $topLevel = [];
+
+        foreach ($extensions as $ext) {
+            if ($ext['package_id'] > 0) {
+                $children[$ext['package_id']][] = $ext;
+            } else {
+                $topLevel[] = $ext;
+            }
+        }
+
+        // Package children carried no package_id of their own get listed under their parent, so only
+        // packages and genuinely standalone extensions remain at the top level, sorted newest first.
+        usort($topLevel, static fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+
+        $labelSort = static fn(array $a, array $b): int => strcmp($a['label'], $b['label']);
+        $items     = [];
+
+        foreach ($topLevel as $ext) {
+            $items[] = $this->extensionListItem($ext, false);
+
+            if ($ext['type'] !== 'package' || empty($children[$ext['extension_id']])) {
+                continue;
+            }
+
+            $group = $children[$ext['extension_id']];
+            usort($group, $labelSort);
+
+            foreach ($group as $child) {
+                $items[] = $this->extensionListItem($child, true);
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * Builds a single extension-list item (date + canonical label + type), indented when it is a
+     * package child.
+     *
+     * @param   array    $ext      An inventory entry.
+     * @param   boolean  $isChild  Whether to render it indented under its package.
+     *
+     * @return  array  ['title' => string, 'link' => string].
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function extensionListItem(array $ext, bool $isChild): array
+    {
+        $when    = $ext['mtime'] ? date('Y-m-d H:i', $ext['mtime']) : '----------';
+        $prefix  = $isChild ? '↳ ' : ($when . '  ');
+        $name    = $this->displayName($ext);
+        $caption = $name === $ext['label'] ? $ext['label'] : $name . '  ·  ' . $ext['label'];
+
+        return [
+            'title' => $prefix . $caption,
+            'link'  => Uri::base() . 'index.php?option=com_installer&view=manage&filter[search]='
+                . rawurlencode($ext['element']),
+        ];
+    }
+
+    /**
+     * Resolves a human-readable extension title by loading the extension's own ".sys" language and
+     * translating its manifest name, falling back to the canonical label when no translation exists.
+     *
+     * @param   array  $ext  An inventory entry from ExtensionInventory::list().
+     *
+     * @return  string
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function displayName(array $ext): string
+    {
+        $lang    = $this->getApplication()->getLanguage();
+        $element = $ext['element'];
+        $folder  = $ext['folder'];
+        $path    = $ext['client'] === 1 ? JPATH_ADMINISTRATOR : JPATH_SITE;
+
+        switch ($ext['type']) {
+            case 'component':
+                $lang->load("$element.sys", JPATH_ADMINISTRATOR)
+                    || $lang->load("$element.sys", JPATH_ADMINISTRATOR . '/components/' . $element);
+                break;
+            case 'module':
+                $lang->load("$element.sys", $path) || $lang->load("$element.sys", $path . '/modules/' . $element);
+                break;
+            case 'plugin':
+                $name = 'plg_' . $folder . '_' . $element;
+                $lang->load("$name.sys", JPATH_ADMINISTRATOR)
+                    || $lang->load("$name.sys", JPATH_PLUGINS . '/' . $folder . '/' . $element);
+                break;
+            case 'template':
+                $lang->load('tpl_' . $element . '.sys', $path)
+                    || $lang->load('tpl_' . $element . '.sys', $path . '/templates/' . $element);
+                break;
+            case 'library':
+                $lang->load('lib_' . $element . '.sys', $path)
+                    || $lang->load('lib_' . $element . '.sys', JPATH_LIBRARIES . '/' . $element);
+                break;
+            case 'package':
+            default:
+                $lang->load($element . '.sys', JPATH_SITE);
+                break;
+        }
+
+        $title = trim(Text::_($ext['name']));
+
+        // An untranslated key (all caps / underscores) or an empty value is not a usable name.
+        if ($title === '' || preg_match('/^[A-Z0-9_]+$/', $title)) {
+            return $ext['label'];
+        }
+
+        return $title;
     }
 
     /**
