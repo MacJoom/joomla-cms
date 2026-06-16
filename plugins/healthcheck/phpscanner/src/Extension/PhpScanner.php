@@ -23,6 +23,7 @@ use Joomla\Filesystem\Folder;
 use Joomla\Module\Healthcheck\Administrator\Event\HealthChecksEvent;
 use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\ExtensionInventory;
 use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\MalwareScanner;
+use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\ParamList;
 use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\RecentFileScanner;
 
 // phpcs:disable PSR1.Files.SideEffects
@@ -43,20 +44,20 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     use DatabaseAwareTrait;
 
     /**
-     * PHP artifact LIKE patterns ("%" and "_" are the only LIKE wildcards).
+     * Default PHP artifact fragments searched for in content (wrapped as %fragment% for the query).
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
      */
-    private const PHP_PATTERNS = ['%<?php%', '%<?=%'];
+    private const PHP_PATTERNS = ['<?php', '<?='];
 
     /**
-     * Sourcerer (Regular Labs) code-tag LIKE patterns.
+     * Default Sourcerer (Regular Labs) code-tag fragments (wrapped as %fragment% for the query).
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
      */
-    private const SOURCERER_PATTERNS = ['%{source%'];
+    private const SOURCERER_PATTERNS = ['{source'];
 
     /**
      * Legacy Joomla "J*" classes/loaders treated as deprecated code.
@@ -180,7 +181,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     {
         [$patterns, $scanArticles, $scanModules, $status, $icon, $textKey] = match ($issue) {
             'phpcontent' => [
-                self::PHP_PATTERNS,
+                $this->getPhpPatterns(),
                 $this->params->get('scanArticles', '1') == '1',
                 $this->params->get('scanModules', '1') == '1',
                 'error',
@@ -188,7 +189,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 'PLG_HEALTHCHECK_PHPSCANNER_PHPCONTENT_LISTTEXT',
             ],
             'sourcerer' => [
-                self::SOURCERER_PATTERNS,
+                $this->getSourcererPatterns(),
                 true,
                 true,
                 'warning',
@@ -585,7 +586,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTNOTE');
                 $item['link']          = Uri::base() . 'index.php?option=com_installer&view=manage';
 
-                $item['items']  = $this->extensionItems(fn(string $dir): bool => $this->dirHasRegexMatch($dir, self::SHIM_PATTERNS));
+                $item['items']  = $this->extensionItems(fn(string $dir): bool => $this->dirHasRegexMatch($dir, $this->getShimPatterns()));
                 $item['result'] = \count($item['items']);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETSHIMS_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
@@ -673,10 +674,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     private function malwareSignatures(): array
     {
-        $configured = (string) $this->params->get('malwareSignatures', '');
-        $list       = array_filter(array_map('trim', preg_split('/[\r\n]+/', $configured)));
-
-        return $list ?: MalwareScanner::DEFAULT_SIGNATURES;
+        return ParamList::lines((string) $this->params->get('malwareSignatures', ''), MalwareScanner::DEFAULT_SIGNATURES);
     }
 
     /**
@@ -688,10 +686,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     private function malwareExcludes(): array
     {
-        $configured = (string) $this->params->get('malwareExcludes', '');
-        $list       = array_filter(array_map('trim', preg_split('/[\r\n,]+/', $configured)));
-
-        return $list ?: MalwareScanner::DEFAULT_EXCLUDES;
+        return ParamList::commaList((string) $this->params->get('malwareExcludes', ''), MalwareScanner::DEFAULT_EXCLUDES);
     }
 
     /**
@@ -805,10 +800,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     private function recentFilesExcludes(): array
     {
-        $configured = (string) $this->params->get('recentFilesExcludes', '');
-        $list       = array_filter(array_map('trim', preg_split('/[\r\n,]+/', $configured)));
-
-        return $list ?: RecentFileScanner::DEFAULT_EXCLUDES;
+        return ParamList::commaList((string) $this->params->get('recentFilesExcludes', ''), RecentFileScanner::DEFAULT_EXCLUDES);
     }
 
     /**
@@ -1191,11 +1183,64 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     protected function getRedefinitionPatterns(): array
     {
-        $configured = (string) $this->params->get('redefinitionPatterns', '');
+        return ParamList::lines((string) $this->params->get('redefinitionPatterns', ''), self::REDEFINITION_PATTERNS);
+    }
 
-        $patterns = array_filter(array_map('trim', preg_split('/[\r\n]+/', $configured)));
+    /**
+     * Returns the configured PHP-artifact content patterns (wrapped as %fragment% LIKE patterns),
+     * falling back to the built-in defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getPhpPatterns(): array
+    {
+        return $this->likePatterns('phpPatterns', self::PHP_PATTERNS);
+    }
 
-        return $patterns ?: self::REDEFINITION_PATTERNS;
+    /**
+     * Returns the configured Sourcerer content patterns (wrapped as %fragment% LIKE patterns),
+     * falling back to the built-in defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getSourcererPatterns(): array
+    {
+        return $this->likePatterns('sourcererPatterns', self::SOURCERER_PATTERNS);
+    }
+
+    /**
+     * Returns the configured compatibility-shim regexes (no delimiters), falling back to the
+     * built-in defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getShimPatterns(): array
+    {
+        return ParamList::lines((string) $this->params->get('shimPatterns', ''), self::SHIM_PATTERNS);
+    }
+
+    /**
+     * Reads a newline-separated parameter of raw fragments and wraps each as a %fragment% LIKE
+     * pattern, falling back to the given defaults when the parameter is empty.
+     *
+     * @param   string    $param     The parameter name holding the raw fragments.
+     * @param   string[]  $defaults  Raw default fragments.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function likePatterns(string $param, array $defaults): array
+    {
+        $fragments = ParamList::lines((string) $this->params->get($param, ''), $defaults);
+
+        return array_map(static fn(string $fragment): string => '%' . $fragment . '%', $fragments);
     }
 
     /**
@@ -1207,11 +1252,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     protected function getDeprecatedTokens(): array
     {
-        $configured = (string) $this->params->get('deprecatedTokens', '');
-
-        $tokens = array_filter(array_map('trim', preg_split('/[\r\n,]+/', $configured)));
-
-        return $tokens ?: self::DEPRECATED_TOKENS;
+        return ParamList::commaList((string) $this->params->get('deprecatedTokens', ''), self::DEPRECATED_TOKENS);
     }
 
     /**

@@ -51,6 +51,17 @@
 					<option value="1">JYES</option>
 				</field>
 				<field
+					name="phpPatterns"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_PHPPATTERNS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_PHPPATTERNS_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="&lt;?php&#10;&lt;?="
+					showon="scanArticles:1[OR]scanModules:1"
+				/>
+				<field
 					name="scanSourcerer"
 					type="radio"
 					label="PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT"
@@ -61,6 +72,17 @@
 					<option value="0">JNO</option>
 					<option value="1">JYES</option>
 				</field>
+				<field
+					name="sourcererPatterns"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_SOURCERERPATTERNS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_SOURCERERPATTERNS_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="{source"
+					showon="scanSourcerer:1"
+				/>
 				<field
 					name="scanDeprecatedContent"
 					type="radio"
@@ -106,6 +128,17 @@
 					<option value="1">JYES</option>
 				</field>
 				<field
+					name="shimPatterns"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_SHIMPATTERNS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_SHIMPATTERNS_DESC"
+					rows="4"
+					cols="40"
+					filter="raw"
+					default="!\s*function_exists\s*\(&#10;!\s*class_exists\s*\(&#10;!\s*interface_exists\s*\(&#10;!\s*trait_exists\s*\("
+					showon="scanShims:1"
+				/>
+				<field
 					name="redefinitionPatterns"
 					type="textarea"
 					label="PLG_HEALTHCHECK_PHPSCANNER_REDEFINEPATTERNS_LABEL"
@@ -113,6 +146,7 @@
 					rows="4"
 					cols="40"
 					filter="raw"
+					default="JLoader::registerAlias(&#10;function jimport&#10;function jexit&#10;function jdebug"
 					showon="scanRedefinitions:1"
 				/>
 				<field
@@ -134,6 +168,7 @@
 					rows="6"
 					cols="40"
 					filter="raw"
+					default="eval\s*\(\s*(base64_decode|gzinflate|gzuncompress|str_rot13|gzdecode)&#10;preg_replace\s*\(\s*['&quot;][^'&quot;]+/e['&quot;]&#10;assert\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)&#10;(system|shell_exec|exec|passthru|proc_open|popen)\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)&#10;(eval|assert|system|shell_exec|exec|passthru|proc_open|popen)\s*\([^;]*php://input&#10;\b(c99|r57|wso|b374k|filesman)\b&#10;base64_decode\s*\(\s*['&quot;][A-Za-z0-9+/]{200,}"
 					showon="scanMalware:1"
 				/>
 				<field
@@ -144,6 +179,7 @@
 					rows="3"
 					cols="40"
 					filter="raw"
+					default="node_modules, .git, .svn"
 					showon="scanMalware:1"
 				/>
 				<field
@@ -165,6 +201,7 @@
 					rows="3"
 					cols="40"
 					filter="raw"
+					default="cache, tmp, logs, node_modules, .git, .svn, manifests, build, tests"
 					showon="scanRecentFiles:1"
 				/>
 				<field
