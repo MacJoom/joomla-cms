@@ -22,6 +22,8 @@ use Joomla\Event\SubscriberInterface;
 use Joomla\Filesystem\Folder;
 use Joomla\Module\Healthcheck\Administrator\Event\HealthChecksEvent;
 use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\ExtensionInventory;
+use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\HashBaseline;
+use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\HashScanner;
 use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\MalwareScanner;
 use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\ParamList;
 use Joomla\Plugin\Healthcheck\PhpScanner\Scanner\RecentFileScanner;
@@ -344,6 +346,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
             'shims'               => $this->getCompatibilityShims(),
             'malware'             => $this->getMalwareCheck(),
             'recentfiles'         => $this->getRecentFilesCheck(),
+            'integrity'           => $this->getIntegrityCheck(),
             'extensions'          => $this->getInstalledExtensionsCheck(),
             default               => null,
         };
@@ -421,6 +424,13 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 'icon'    => 'fas fa-file-circle-plus',
                 'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_LISTTEXT',
                 'hint'    => 'PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_HINT',
+                'link'    => 'index.php?option=com_admin&view=sysinfo',
+            ],
+            'integrity' => [
+                'enabled' => $this->params->get('scanIntegrity', '1') == '1',
+                'icon'    => 'fas fa-fingerprint',
+                'text'    => 'PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_LISTTEXT',
+                'hint'    => 'PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_HINT',
                 'link'    => 'index.php?option=com_admin&view=sysinfo',
             ],
             'extensions' => [
@@ -801,6 +811,151 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     private function recentFilesExcludes(): array
     {
         return ParamList::commaList((string) $this->params->get('recentFilesExcludes', ''), RecentFileScanner::DEFAULT_EXCLUDES);
+    }
+
+    /**
+     * Compares every PHP file against the stored integrity baseline (the trusted original hashes),
+     * reporting changed, added and missing files. Establishes the baseline on first run, or when the
+     * "rebuild baseline" option is set.
+     *
+     * @return  array  Array containing result count, link, text/note labels, items, or an error key.
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    protected function getIntegrityCheck(): array
+    {
+        $item = [];
+
+        if ($this->params->get('scanIntegrity', '1') != '1') {
+            $item['error'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_CHECKISDEACTIVATED');
+
+            return $item;
+        }
+
+        try {
+            $item['icon'] = 'fas fa-fingerprint';
+            $item['text'] = Text::_('PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_LISTTEXT');
+            $item['link'] = Uri::base() . 'index.php?option=com_admin&view=sysinfo';
+
+            $baseline = new HashBaseline($this->getDatabase());
+            $rebuild  = $this->params->get('rebuildBaseline', '0') == '1';
+
+            // Establish (or re-establish) the trusted baseline, then report nothing to compare yet.
+            if ($rebuild || $baseline->isEmpty()) {
+                $stored = $baseline->store((new HashScanner($this->integrityExcludes()))->scan(JPATH_ROOT));
+
+                if ($rebuild) {
+                    $this->clearFlag('rebuildBaseline');
+                }
+
+                @unlink(JPATH_CACHE . '/phpscanner_integrity.json');
+
+                $item['statusOnFound'] = 'info';
+                $item['note']          = Text::sprintf('PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_BASELINED', $stored);
+                $item['result']        = 0;
+
+                return $item;
+            }
+
+            // One-shot re-scan: drop the cached comparison so it is recomputed now.
+            if ($this->params->get('rescanIntegrity', '0') == '1') {
+                @unlink(JPATH_CACHE . '/phpscanner_integrity.json');
+                $this->clearFlag('rescanIntegrity');
+            }
+
+            $item['statusOnFound'] = 'error';
+            $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_LISTNOTE');
+
+            $diff    = $this->integrityResult($baseline);
+            $reasons = [
+                'changed' => Text::_('PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_REASON_CHANGED'),
+                'added'   => Text::_('PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_REASON_ADDED'),
+                'missing' => Text::_('PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_REASON_MISSING'),
+            ];
+
+            $items = [];
+
+            foreach (['changed', 'added', 'missing'] as $reason) {
+                foreach ($diff[$reason] as $path) {
+                    $items[] = ['title' => '[' . $reasons[$reason] . ']  ' . $path, 'link' => ''];
+                }
+            }
+
+            $item['items']  = $items;
+            $item['result'] = \count($items);
+        } catch (\Exception $e) {
+            $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETINTEGRITY_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
+            $item['error'] = $e->getMessage();
+        }
+
+        return $item;
+    }
+
+    /**
+     * Returns the cached integrity comparison, running (and caching) a fresh full-site hash + compare
+     * when stale.
+     *
+     * @param   HashBaseline  $baseline  The baseline repository.
+     *
+     * @return  array  ['changed' => string[], 'added' => string[], 'missing' => string[]].
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function integrityResult(HashBaseline $baseline): array
+    {
+        $cacheFile = JPATH_CACHE . '/phpscanner_integrity.json';
+        $ttl       = 900; // 15 minutes (integrity is time-sensitive; use the re-scan option for an immediate refresh)
+
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+            $data = json_decode((string) file_get_contents($cacheFile), true);
+
+            if (\is_array($data) && isset($data['changed'], $data['added'], $data['missing'])) {
+                return $data;
+            }
+        }
+
+        $diff = $baseline->compare((new HashScanner($this->integrityExcludes()))->scan(JPATH_ROOT));
+
+        @file_put_contents($cacheFile, json_encode($diff));
+
+        return $diff;
+    }
+
+    /**
+     * Returns the configured integrity excluded directory names, falling back to the defaults.
+     *
+     * @return  string[]
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function integrityExcludes(): array
+    {
+        return ParamList::commaList((string) $this->params->get('integrityExcludes', ''), HashScanner::DEFAULT_EXCLUDES);
+    }
+
+    /**
+     * Resets a one-shot option (e.g. rebuildBaseline, rescanIntegrity) back to off after it has run,
+     * by updating the plugin's stored parameters.
+     *
+     * @param   string  $param  The parameter name to reset to "0".
+     *
+     * @return  void
+     *
+     * @since    __DEPLOY_VERSION__
+     */
+    private function clearFlag(string $param): void
+    {
+        $this->params->set($param, '0');
+
+        $db    = $this->getDatabase();
+        $query = $db->getQuery(true)
+            ->update($db->quoteName('#__extensions'))
+            ->set($db->quoteName('params') . ' = ' . $db->quote($this->params->toString()))
+            ->where($db->quoteName('type') . ' = ' . $db->quote('plugin'))
+            ->where($db->quoteName('folder') . ' = ' . $db->quote('healthcheck'))
+            ->where($db->quoteName('element') . ' = ' . $db->quote('phpscanner'));
+
+        $db->setQuery($query)->execute();
     }
 
     /**

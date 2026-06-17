@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+	<name>PLG_SYSTEM_PHPSCANNERBASELINE</name>
+	<author>Joomla! Project</author>
+	<creationDate>2026-06</creationDate>
+	<copyright>(C) 2026 Open Source Matters, Inc.</copyright>
+	<license>GNU General Public License version 2 or later; see LICENSE.txt</license>
+	<authorEmail>admin@joomla.org</authorEmail>
+	<authorUrl>www.joomla.org</authorUrl>
+	<version>1.0.0</version>
+	<description>PLG_SYSTEM_PHPSCANNERBASELINE_XML_DESCRIPTION</description>
+	<namespace path="src">Joomla\Plugin\System\PhpScannerBaseline</namespace>
+	<files>
+		<folder plugin="phpscannerbaseline">services</folder>
+		<folder>src</folder>
+	</files>
+	<languages>
+		<language tag="en-GB">language/en-GB/plg_system_phpscannerbaseline.ini</language>
+		<language tag="en-GB">language/en-GB/plg_system_phpscannerbaseline.sys.ini</language>
+	</languages>
+</extension>

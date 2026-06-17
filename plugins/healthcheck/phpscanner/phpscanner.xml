@@ -13,7 +13,18 @@
 	<files>
 		<folder plugin="phpscanner">services</folder>
 		<folder>src</folder>
+		<folder>sql</folder>
 	</files>
+	<install>
+		<sql>
+			<file driver="mysql" charset="utf8">sql/install.mysql.utf8.sql</file>
+		</sql>
+	</install>
+	<uninstall>
+		<sql>
+			<file driver="mysql" charset="utf8">sql/uninstall.mysql.utf8.sql</file>
+		</sql>
+	</uninstall>
 	<languages>
 		<language tag="en-GB">language/en-GB/plg_healthcheck_phpscanner.ini</language>
 		<language tag="en-GB">language/en-GB/plg_healthcheck_phpscanner.sys.ini</language>
@@ -204,6 +215,64 @@
 					default="cache, tmp, logs, node_modules, .git, .svn, manifests, build, tests"
 					showon="scanRecentFiles:1"
 				/>
+				<field
+					name="scanIntegrity"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_LISTNOTE_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="integrityExcludes"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITYEXCL_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITYEXCL_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="cache, tmp, logs, node_modules, .git, .svn"
+					showon="scanIntegrity:1"
+				/>
+				<field
+					name="rebuildBaseline"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_REBUILDBASELINE_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_REBUILDBASELINE_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="0"
+					showon="scanIntegrity:1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="rescanIntegrity"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_RESCANINTEGRITY_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_RESCANINTEGRITY_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="0"
+					showon="scanIntegrity:1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="autoBaselineOnUpdate"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_AUTOBASELINE_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_AUTOBASELINE_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+					showon="scanIntegrity:1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
 				<field
 					name="scanExtensionList"
 					type="radio"
