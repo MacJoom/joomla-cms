@@ -54,7 +54,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     private const PHP_PATTERNS = ['<?php', '<?='];
 
     /**
-     * Default Sourcerer (Regular Labs) code-tag fragments (wrapped as %fragment% for the query).
+     * Default 3rd party tool code-tag fragments (wrapped as %fragment% for the query).
      *
      * @var    string[]
      * @since  __DEPLOY_VERSION__
@@ -170,7 +170,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Runs a content issue (PHP artifacts, Sourcerer tags or deprecated APIs) over articles and
+     * Runs a content issue (PHP artifacts, 3rd party tool tags or deprecated APIs) over articles and
      * modules and returns the result with one item per matching article/module.
      *
      * @param   string  $issue  One of 'phpcontent', 'sourcerer', 'deprecatedcontent'.
@@ -1355,7 +1355,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     }
 
     /**
-     * Returns the configured Sourcerer content patterns (wrapped as %fragment% LIKE patterns),
+     * Returns the configured 3rd party tool content patterns (wrapped as %fragment% LIKE patterns),
      * falling back to the built-in defaults.
      *
      * @return  string[]

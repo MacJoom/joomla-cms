@@ -174,13 +174,23 @@ final class HashBaseline
     {
         $table = $this->db->quoteName('#__phpscanner_baseline');
 
-        $sql = 'CREATE TABLE IF NOT EXISTS ' . $table . ' ('
-            . $this->db->quoteName('id') . ' INT UNSIGNED NOT NULL AUTO_INCREMENT, '
-            . $this->db->quoteName('path') . ' VARCHAR(1024) NOT NULL, '
-            . $this->db->quoteName('hash') . ' CHAR(64) NOT NULL, '
-            . $this->db->quoteName('created') . ' DATETIME NULL, '
-            . 'PRIMARY KEY (' . $this->db->quoteName('id') . ')'
-            . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+        if ($this->db->getServerType() === 'postgresql') {
+            $sql = 'CREATE TABLE IF NOT EXISTS ' . $table . ' ('
+                . $this->db->quoteName('id') . ' serial NOT NULL, '
+                . $this->db->quoteName('path') . ' varchar(1024) NOT NULL, '
+                . $this->db->quoteName('hash') . ' char(64) NOT NULL, '
+                . $this->db->quoteName('created') . ' timestamp without time zone DEFAULT NULL, '
+                . 'PRIMARY KEY (' . $this->db->quoteName('id') . ')'
+                . ')';
+        } else {
+            $sql = 'CREATE TABLE IF NOT EXISTS ' . $table . ' ('
+                . $this->db->quoteName('id') . ' INT UNSIGNED NOT NULL AUTO_INCREMENT, '
+                . $this->db->quoteName('path') . ' VARCHAR(1024) NOT NULL, '
+                . $this->db->quoteName('hash') . ' CHAR(64) NOT NULL, '
+                . $this->db->quoteName('created') . ' DATETIME NULL, '
+                . 'PRIMARY KEY (' . $this->db->quoteName('id') . ')'
+                . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+        }
 
         $this->db->setQuery($sql)->execute();
     }
