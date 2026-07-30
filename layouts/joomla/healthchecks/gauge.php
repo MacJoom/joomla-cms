@@ -80,8 +80,6 @@ if ($hasLink) {
     }
     if (!empty($linktitle)) {
         $linkAttributes .= ' title="' . htmlspecialchars($linktitle) . '"';
-    } else {
-        $linkAttributes .= ' title="' . htmlspecialchars(Text::sprintf('MOD_HEALTHCHECK_GAUGE_LINK_TITLE', $label, $score, $unit)) . '"';
     }
 }
 
@@ -108,42 +106,32 @@ $size   = 120;
 $center = $size / 2;
 ?>
 <li class="healthcheck-gauge"<?php echo $id; ?>
-     role="img"
-     tabindex="<?php echo $hasLink ? '-1' : '0'; ?>"
-     aria-label="<?php echo htmlspecialchars(Text::sprintf($hasLink ? 'MOD_HEALTHCHECK_GAUGE_ITEM_ARIA_LABEL_LINK' : 'MOD_HEALTHCHECK_GAUGE_ITEM_ARIA_LABEL', $label, $score, $unit, $score_max)); ?>"
      data-healthcheck-status="<?php echo $filterStatus; ?>"
      data-score="<?php echo $score; ?>"
      data-max="<?php echo $score_max; ?>"
      data-percentage="<?php echo number_format($percentage, 1); ?>">
 
     <?php if ($hasLink) : ?>
-        <a <?php echo $linkAttributes; ?> class="gauge-link d-block text-decoration-none"
-           aria-label="<?php echo htmlspecialchars(Text::sprintf('MOD_HEALTHCHECK_GAUGE_LINK_ARIA_LABEL', $linktitle ?: $label, $score, $unit)); ?>">
+        <a <?php echo $linkAttributes; ?> class="gauge-link d-block text-decoration-none">
     <?php endif; ?>
 
     <div class="gauge-container text-center">
         <?php if (!empty($label)) : ?>
-            <h4 class="gauge-label mb-1" id="gauge-title-<?php echo md5($label); ?>"><?php echo htmlspecialchars($label); ?></h4>
+            <h4 class="gauge-label mb-1"><?php echo htmlspecialchars($label); ?></h4>
         <?php endif; ?>
 
         <?php if (!empty($sublabel)) : ?>
-            <p class="gauge-sublabel text-muted small mb-2" id="gauge-subtitle-<?php echo md5($label); ?>"><?php echo htmlspecialchars($sublabel); ?></p>
+            <p class="gauge-sublabel text-muted small mb-2"><?php echo htmlspecialchars($sublabel); ?></p>
         <?php endif; ?>
 
-        <div class="gauge-chart-container position-relative d-inline-block"
-             aria-labelledby="<?php echo !empty($label) ? 'gauge-title-' . md5($label) : ''; ?><?php echo !empty($sublabel) ? ' gauge-subtitle-' . md5($label) : ''; ?>"
-             aria-describedby="gauge-description-<?php echo md5($label); ?><?php echo !empty($note) ? ' gauge-note-' . md5($label) : ''; ?>">
+        <div class="gauge-chart-container position-relative d-inline-block">
 
             <svg width="<?php echo $size; ?>"
                  height="<?php echo $size; ?>"
                  viewBox="0 0 <?php echo $size; ?> <?php echo $size; ?>"
                  class="gauge-svg"
-                 role="img"
                  aria-hidden="true"
                  focusable="false">
-
-                <title><?php echo htmlspecialchars(Text::sprintf('MOD_HEALTHCHECK_GAUGE_SVG_TITLE', $label, $score, $unit)); ?></title>
-                <desc><?php echo htmlspecialchars(Text::sprintf('MOD_HEALTHCHECK_GAUGE_SVG_DESC', $score, $unit, $score_max, number_format($percentage, 1))); ?></desc>
 
                 <!-- Background circle -->
                 <circle
@@ -198,7 +186,7 @@ $center = $size / 2;
             </svg>
 
             <!-- Screen reader accessible description -->
-            <div id="gauge-description-<?php echo md5($label); ?>" class="sr-only">
+            <div class="visually-hidden">
                 <?php echo htmlspecialchars(Text::sprintf('MOD_HEALTHCHECK_GAUGE_SR_SCORE', $score, $unit, $score_max)); ?>
                 <?php echo htmlspecialchars(Text::sprintf('MOD_HEALTHCHECK_GAUGE_SR_RANGE', number_format($percentage, 1), $score_min, $score_max)); ?>
                 <?php if ($score >= $score_threshold_success) : ?>
@@ -217,7 +205,7 @@ $center = $size / 2;
         </div>
 
         <?php if (!empty($note)) : ?>
-            <p class="gauge-note small mt-2" id="gauge-note-<?php echo md5($label); ?>"><?php echo htmlspecialchars($note); ?></p>
+            <p class="gauge-note small mt-2"><?php echo htmlspecialchars($note); ?></p>
         <?php endif; ?>
 
         <!-- Raw data display (optional, for debugging) -->
