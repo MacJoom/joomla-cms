@@ -199,14 +199,14 @@ final class Showcase extends CMSPlugin implements SubscriberInterface
         ];
 
         $gauges[] = [
-            'id'       => 'plg_healthcheck_showcase_gauge_nounit',
-            'label'    => 'Active Sessions',
-            'sublabel' => 'Current users online',
-            'score'    => 42,
-            'unit'     => '',
+            'id'        => 'plg_healthcheck_showcase_gauge_nounit',
+            'label'     => 'Active Sessions',
+            'sublabel'  => 'Current users online',
+            'score'     => 42,
+            'unit'      => '',
             'score_min' => 0,
             'score_max' => 200,
-            'status'   => 'success',
+            'status'    => 'success',
         ];
 
         $result   = $event->getArgument('result', []);

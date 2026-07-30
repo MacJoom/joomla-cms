@@ -199,7 +199,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 'PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT',
             ],
             'deprecatedcontent' => [
-                array_map(static fn(string $token): string => '%' . $token . '%', $this->getDeprecatedTokens()),
+                array_map(static fn (string $token): string => '%' . $token . '%', $this->getDeprecatedTokens()),
                 true,
                 true,
                 'warning',
@@ -564,7 +564,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
                 $patterns = $this->getRedefinitionPatterns();
 
-                $item['items']  = $this->extensionItems(fn(string $dir): bool => $this->dirHasRedefinition($dir, $patterns));
+                $item['items']  = $this->extensionItems(fn (string $dir): bool => $this->dirHasRedefinition($dir, $patterns));
                 $item['result'] = \count($item['items']);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETREDEFINE_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
@@ -596,7 +596,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 $item['note']          = Text::_('PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTNOTE');
                 $item['link']          = Uri::base() . 'index.php?option=com_installer&view=manage';
 
-                $item['items']  = $this->extensionItems(fn(string $dir): bool => $this->dirHasRegexMatch($dir, $this->getShimPatterns()));
+                $item['items']  = $this->extensionItems(fn (string $dir): bool => $this->dirHasRegexMatch($dir, $this->getShimPatterns()));
                 $item['result'] = \count($item['items']);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETSHIMS_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
@@ -635,7 +635,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 $files = $this->malwareScanResult();
 
                 // Suspicious files have no admin edit screen, so the item is the path only (no link).
-                $item['items']  = array_map(static fn(array $file): array => ['title' => $file['path'], 'link' => ''], $files);
+                $item['items']  = array_map(static fn (array $file): array => ['title' => $file['path'], 'link' => ''], $files);
                 $item['result'] = \count($files);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETMALWARE_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
@@ -732,7 +732,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
                 // These have no admin edit screen, so render date, reason and path as plain copyable text.
                 $item['items'] = array_map(
-                    static fn(array $file): array => [
+                    static fn (array $file): array => [
                         'title' => date('Y-m-d H:i', $file['mtime']) . '  [' . ($reasons[$file['reason']] ?? $file['reason']) . ']  ' . $file['path'],
                         'link'  => '',
                     ],
@@ -982,7 +982,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 // Only third-party extensions are of interest; core ones are locked (or protected).
                 $extensions = array_values(array_filter(
                     $extensions,
-                    static fn(array $e): bool => $e['protected'] === 0 && $e['locked'] === 0 && $e['state'] === 0
+                    static fn (array $e): bool => $e['protected'] === 0 && $e['locked'] === 0 && $e['state'] === 0
                 ));
 
                 $item['items']  = $this->groupExtensionItems($extensions);
@@ -1023,9 +1023,9 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
         // Package children carried no package_id of their own get listed under their parent, so only
         // packages and genuinely standalone extensions remain at the top level, sorted newest first.
-        usort($topLevel, static fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+        usort($topLevel, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
 
-        $labelSort = static fn(array $a, array $b): int => strcmp($a['label'], $b['label']);
+        $labelSort = static fn (array $a, array $b): int => strcmp($a['label'], $b['label']);
         $items     = [];
 
         foreach ($topLevel as $ext) {
@@ -1395,7 +1395,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     {
         $fragments = ParamList::lines((string) $this->params->get($param, ''), $defaults);
 
-        return array_map(static fn(string $fragment): string => '%' . $fragment . '%', $fragments);
+        return array_map(static fn (string $fragment): string => '%' . $fragment . '%', $fragments);
     }
 
     /**
