@@ -221,7 +221,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 'PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT',
             ],
             'deprecatedcontent' => [
-                array_map(static fn(string $token): string => '%' . $token . '%', $this->getDeprecatedTokens()),
+                array_map(static fn (string $token): string => '%' . $token . '%', $this->getDeprecatedTokens()),
                 true,
                 true,
                 'warning',
@@ -665,7 +665,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 $files = $this->malwareScanResult();
 
                 // Suspicious files have no admin edit screen, so the item is the path only (no link).
-                $item['items']  = array_map(static fn(array $file): array => ['title' => $file['path'], 'link' => ''], $files);
+                $item['items']  = array_map(static fn (array $file): array => ['title' => $file['path'], 'link' => ''], $files);
                 $item['result'] = \count($files);
             } catch (\Exception $e) {
                 $this->handleErrorMsg(Text::_('PLG_HEALTHCHECK_PHPSCANNER_GETMALWARE_ERROR') . ' / ' . $e->getMessage(), 'ERROR');
@@ -702,7 +702,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
                 // These have no admin edit screen, so render the path with its size as plain text.
                 $item['items'] = array_map(
-                    static fn(array $file): array => [
+                    static fn (array $file): array => [
                         'title' => $file['path'] . '  (' . self::formatBytes((int) ($file['size'] ?? 0)) . ')',
                         'link'  => '',
                     ],
@@ -872,7 +872,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
                 // These have no admin edit screen, so render date, reason and path as plain copyable text.
                 $item['items'] = array_map(
-                    static fn(array $file): array => [
+                    static fn (array $file): array => [
                         'title' => date('Y-m-d H:i', $file['mtime']) . '  [' . ($reasons[$file['reason']] ?? $file['reason']) . ']  ' . $file['path'],
                         'link'  => '',
                     ],
@@ -1122,7 +1122,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                 // Only third-party extensions are of interest; core ones are locked (or protected).
                 $extensions = array_values(array_filter(
                     $extensions,
-                    static fn(array $e): bool => $e['protected'] === 0 && $e['locked'] === 0 && $e['state'] === 0
+                    static fn (array $e): bool => $e['protected'] === 0 && $e['locked'] === 0 && $e['state'] === 0
                 ));
 
                 $item['items']  = $this->groupExtensionItems($extensions);
@@ -1163,9 +1163,9 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
 
         // Package children carried no package_id of their own get listed under their parent, so only
         // packages and genuinely standalone extensions remain at the top level, sorted newest first.
-        usort($topLevel, static fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
+        usort($topLevel, static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime']);
 
-        $labelSort = static fn(array $a, array $b): int => strcmp($a['label'], $b['label']);
+        $labelSort = static fn (array $a, array $b): int => strcmp($a['label'], $b['label']);
         $items     = [];
 
         foreach ($topLevel as $ext) {
@@ -1309,9 +1309,9 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     private function redefinitionItems(array $patterns): array
     {
-        return $this->codeMatchItems(fn(string $dir): array => $this->collectLineMatches(
+        return $this->codeMatchItems(fn (string $dir): array => $this->collectLineMatches(
             $dir,
-            static fn(string $text): bool => self::matchesAny($text, $patterns)
+            static fn (string $text): bool => self::matchesAny($text, $patterns)
         ));
     }
 
@@ -1327,10 +1327,10 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
      */
     private function shimItems(array $regexes): array
     {
-        return $this->codeMatchItems(fn(string $dir): array => $this->collectLineMatches(
+        return $this->codeMatchItems(fn (string $dir): array => $this->collectLineMatches(
             $dir,
-            static fn(string $text): bool => self::matchesAny($text, $regexes),
-            static fn(array $lines, int $index, int $total): bool => self::guardDeclaresLegacySymbol($lines, $index, $total)
+            static fn (string $text): bool => self::matchesAny($text, $regexes),
+            static fn (array $lines, int $index, int $total): bool => self::guardDeclaresLegacySymbol($lines, $index, $total)
         ));
     }
 
@@ -1555,7 +1555,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
                     $rows[] = '        ...';
                 }
 
-                $rows[]   = sprintf('%s %5d: %s', isset($data['matched'][$number]) ? '>' : ' ', $number, $text);
+                $rows[]   = \sprintf('%s %5d: %s', isset($data['matched'][$number]) ? '>' : ' ', $number, $text);
                 $previous = $number;
             }
 
@@ -1678,8 +1678,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         // Migrate the previous over-broad registerAlias pattern (it matched an extension aliasing its
         // own classes, not only Joomla legacy ones) to the refined regex requiring a J-prefixed alias.
         return array_map(
-            static fn(string $pattern): string =>
-                $pattern === self::LEGACY_REGISTERALIAS_PATTERN ? self::REDEFINITION_PATTERNS[0] : $pattern,
+            static fn (string $pattern): string => $pattern === self::LEGACY_REGISTERALIAS_PATTERN ? self::REDEFINITION_PATTERNS[0] : $pattern,
             $patterns
         );
     }
@@ -1725,7 +1724,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
         // Migrate the previous over-broad guards (which matched an extension guarding its own
         // functions/classes) to the refined regexes requiring a Joomla legacy symbol.
         return array_map(
-            static fn(string $pattern): string => self::LEGACY_SHIM_PATTERNS[$pattern] ?? $pattern,
+            static fn (string $pattern): string => self::LEGACY_SHIM_PATTERNS[$pattern] ?? $pattern,
             $patterns
         );
     }
@@ -1745,7 +1744,7 @@ final class PhpScanner extends CMSPlugin implements SubscriberInterface
     {
         $fragments = ParamList::lines((string) $this->params->get($param, ''), $defaults);
 
-        return array_map(static fn(string $fragment): string => '%' . $fragment . '%', $fragments);
+        return array_map(static fn (string $fragment): string => '%' . $fragment . '%', $fragments);
     }
 
     /**

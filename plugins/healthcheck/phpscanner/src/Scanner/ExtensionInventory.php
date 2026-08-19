@@ -114,7 +114,7 @@ final class ExtensionInventory
             }
         }
 
-        usort($owners, static fn(array $a, array $b): int => \strlen($b['dir']) <=> \strlen($a['dir']));
+        usort($owners, static fn (array $a, array $b): int => \strlen($b['dir']) <=> \strlen($a['dir']));
 
         return $owners;
     }

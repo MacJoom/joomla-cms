@@ -188,7 +188,7 @@ final class RecentFileScanner
             }
         }
 
-        $sort = static fn(array $a, array $b): int => $b['mtime'] <=> $a['mtime'];
+        $sort = static fn (array $a, array $b): int => $b['mtime'] <=> $a['mtime'];
         usort($orphans, $sort);
         usort($changed, $sort);
 

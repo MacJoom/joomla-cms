@@ -74,10 +74,10 @@ enum HealthStatus: string
         }
 
         return match (strtolower((string) $status)) {
-            'success', 'ok', 'healthy', 'green' => self::Success,
-            'warning', 'warn', 'alert', 'yellow' => self::Warning,
+            'success', 'ok', 'healthy', 'green'                    => self::Success,
+            'warning', 'warn', 'alert', 'yellow'                   => self::Warning,
             'error', 'danger', 'critical', 'fail', 'failed', 'red' => self::Error,
-            default => self::Info,
+            default                                                => self::Info,
         };
     }
 
@@ -94,8 +94,8 @@ enum HealthStatus: string
     {
         return match ($this) {
             self::Success, self::Info => 'healthy',
-            self::Warning => 'warning',
-            self::Error => 'critical',
+            self::Warning             => 'warning',
+            self::Error               => 'critical',
         };
     }
 
@@ -111,8 +111,8 @@ enum HealthStatus: string
         return match ($this) {
             self::Success => 'success',
             self::Warning => 'warning',
-            self::Error => 'danger',
-            self::Info => 'info',
+            self::Error   => 'danger',
+            self::Info    => 'info',
         };
     }
 }
