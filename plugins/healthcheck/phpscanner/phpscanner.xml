@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="healthcheck" method="upgrade">
+	<name>PLG_HEALTHCHECK_PHPSCANNER</name>
+	<author>Joomla! Project</author>
+	<creationDate>2026-06-13</creationDate>
+	<copyright>(C) 2026 Open Source Matters, Inc.</copyright>
+	<license>GNU General Public License version 2 or later; see LICENSE.txt</license>
+	<authorEmail>admin@joomla.org</authorEmail>
+	<authorUrl>www.joomla.org</authorUrl>
+	<version>1.0.9</version>
+	<description>PLG_HEALTHCHECK_PHPSCANNER_XML_DESCRIPTION</description>
+	<namespace path="src">Joomla\Plugin\Healthcheck\PhpScanner</namespace>
+	<files>
+		<folder plugin="phpscanner">services</folder>
+		<folder>src</folder>
+		<folder>sql</folder>
+	</files>
+	<install>
+		<sql>
+			<file driver="mysql" charset="utf8">sql/install.mysql.utf8.sql</file>
+			<file driver="postgresql" charset="utf8">sql/install.postgresql.utf8.sql</file>
+		</sql>
+	</install>
+	<uninstall>
+		<sql>
+			<file driver="mysql" charset="utf8">sql/uninstall.mysql.utf8.sql</file>
+			<file driver="postgresql" charset="utf8">sql/uninstall.postgresql.utf8.sql</file>
+		</sql>
+	</uninstall>
+	<languages>
+		<language tag="en-GB">language/en-GB/plg_healthcheck_phpscanner.ini</language>
+		<language tag="en-GB">language/en-GB/plg_healthcheck_phpscanner.sys.ini</language>
+	</languages>
+	<config>
+		<fields name="params">
+			<fieldset name="basic">
+				<field
+					name="context"
+					type="text"
+					label="PLG_HEALTHCHECK_PHPSCANNER_GROUP_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_GROUP_DESC"
+					default="general"
+				/>
+				<field
+					name="scanArticles"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_ARTICLES_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_ARTICLES_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanModules"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_MODULES_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_MODULES_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="phpPatterns"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_PHPPATTERNS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_PHPPATTERNS_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="&lt;?php&#10;&lt;?="
+					showon="scanArticles:1[OR]scanModules:1"
+				/>
+				<field
+					name="scanSourcerer"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_SOURCERER_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="sourcererPatterns"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_SOURCERERPATTERNS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_SOURCERERPATTERNS_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="{source"
+					showon="scanSourcerer:1"
+				/>
+				<field
+					name="scanDeprecatedContent"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_DEPRECONTENT_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanDeprecatedOverrides"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_DEPREOVERRIDES_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanRedefinitions"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_REDEFINE_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_REDEFINE_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanShims"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_SHIMS_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="shimPatterns"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_SHIMPATTERNS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_SHIMPATTERNS_DESC"
+					rows="4"
+					cols="40"
+					filter="raw"
+					default="!\s*function_exists\s*\(\s*['&quot;]j(import|exit|debug)['&quot;]&#10;!\s*class_exists\s*\(\s*['&quot;]J[A-Z]&#10;!\s*interface_exists\s*\(\s*['&quot;]J[A-Z]&#10;!\s*trait_exists\s*\(\s*['&quot;]J[A-Z]"
+					showon="scanShims:1"
+				/>
+				<field
+					name="redefinitionPatterns"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_REDEFINEPATTERNS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_REDEFINEPATTERNS_DESC"
+					rows="4"
+					cols="40"
+					filter="raw"
+					default="JLoader::registerAlias\s*\(\s*['&quot;]J[A-Z]&#10;function\s+jimport&#10;function\s+jexit&#10;function\s+jdebug"
+					showon="scanRedefinitions:1"
+				/>
+				<field
+					name="contextLines"
+					type="number"
+					label="PLG_HEALTHCHECK_PHPSCANNER_CONTEXTLINES_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_CONTEXTLINES_DESC"
+					default="2"
+					min="0"
+					max="20"
+					filter="integer"
+					validate="number"
+					showon="scanRedefinitions:1[OR]scanShims:1"
+				/>
+				<field
+					name="scanMalware"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_MALWARE_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_MALWARE_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="malwareSignatures"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_MALWARESIG_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_MALWARESIG_DESC"
+					rows="6"
+					cols="40"
+					filter="raw"
+					default="eval\s*\(\s*(base64_decode|gzinflate|gzuncompress|str_rot13|gzdecode)&#10;preg_replace\s*\(\s*['&quot;][^'&quot;]+/e['&quot;]&#10;assert\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)&#10;(system|shell_exec|exec|passthru|proc_open|popen)\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)&#10;(eval|assert|system|shell_exec|exec|passthru|proc_open|popen)\s*\([^;]*php://input&#10;\b(c99|r57|wso|b374k|filesman)\b&#10;base64_decode\s*\(\s*['&quot;][A-Za-z0-9+/]{200,}"
+					showon="scanMalware:1"
+				/>
+				<field
+					name="malwareExcludes"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_MALWAREEXCL_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_MALWAREEXCL_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="node_modules, .git, .svn"
+					showon="scanMalware:1"
+				/>
+				<field
+					name="scanRecentFiles"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_RECENTFILES_LISTNOTE_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="recentFilesExcludes"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_RECENTFILESEXCL_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_RECENTFILESEXCL_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="cache, tmp, logs, node_modules, .git, .svn, manifests, build, tests"
+					showon="scanRecentFiles:1"
+				/>
+				<field
+					name="scanIntegrity"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITY_LISTNOTE_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="integrityExcludes"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITYEXCL_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_INTEGRITYEXCL_DESC"
+					rows="3"
+					cols="40"
+					filter="raw"
+					default="cache, tmp, logs, node_modules, .git, .svn"
+					showon="scanIntegrity:1"
+				/>
+				<field
+					name="rebuildBaseline"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_REBUILDBASELINE_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_REBUILDBASELINE_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="0"
+					showon="scanIntegrity:1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="rescanIntegrity"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_RESCANINTEGRITY_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_RESCANINTEGRITY_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="0"
+					showon="scanIntegrity:1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="autoBaselineOnUpdate"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_AUTOBASELINE_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_AUTOBASELINE_DESC"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+					showon="scanIntegrity:1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="scanExtensionList"
+					type="radio"
+					label="PLG_HEALTHCHECK_PHPSCANNER_EXTLIST_LISTTEXT"
+					description="PLG_HEALTHCHECK_PHPSCANNER_EXTLIST_LISTNOTE"
+					layout="joomla.form.field.radio.switcher"
+					default="1"
+				>
+					<option value="0">JNO</option>
+					<option value="1">JYES</option>
+				</field>
+				<field
+					name="deprecatedTokens"
+					type="textarea"
+					label="PLG_HEALTHCHECK_PHPSCANNER_DEPRETOKENS_LABEL"
+					description="PLG_HEALTHCHECK_PHPSCANNER_DEPRETOKENS_DESC"
+					rows="5"
+					cols="40"
+					filter="string"
+					default="JFactory,JText,JRoute,JUri,JRequest,JResponse,JHtml,JModel,JTable,JController,JComponentHelper,JPluginHelper,JFolder,JFile,JArrayHelper,JString,JError,jimport,JLoader::import"
+					showon="scanDeprecatedContent:1[OR]scanDeprecatedOverrides:1"
+				/>
+				<field
+					name="logging"
+					type="list"
+					description="PLG_HEALTHCHECK_PHPSCANNER_LOGGING_DESC"
+					label="PLG_HEALTHCHECK_PHPSCANNER_LOGGING_LABEL"
+					default="0"
+				>
+					<option value="0">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_NOLOG</option>
+					<option value="1">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_PHPLOG</option>
+					<option value="2">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_JOOMLALOG</option>
+					<option value="3">PLG_HEALTHCHECK_PHPSCANNER_LOGGING_VALUE_MESSAGE</option>
+				</field>
+			</fieldset>
+		</fields>
+	</config>
+</extension>
