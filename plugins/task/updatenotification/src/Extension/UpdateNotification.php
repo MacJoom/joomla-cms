@@ -31,7 +31,6 @@ use Joomla\Database\DatabaseAwareTrait;
 use Joomla\Database\ParameterType;
 use Joomla\Event\DispatcherAwareInterface;
 use Joomla\Event\DispatcherAwareTrait;
-use Joomla\Event\DispatcherInterface;
 use Joomla\Event\SubscriberInterface;
 use PHPMailer\PHPMailer\Exception as phpMailerException;
 
