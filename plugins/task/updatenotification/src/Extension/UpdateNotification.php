@@ -12,6 +12,7 @@ namespace Joomla\Plugin\Task\UpdateNotification\Extension;
 
 use Joomla\CMS\Access\Access;
 use Joomla\CMS\Component\ComponentHelper;
+use Joomla\CMS\Event\Application\BuildAdministratorLoginUrlEvent;
 use Joomla\CMS\Extension\ExtensionHelper;
 use Joomla\CMS\Language\LanguageFactoryAwareTrait;
 use Joomla\CMS\Mail\Exception\MailDisabledException;
@@ -28,6 +29,9 @@ use Joomla\Component\Scheduler\Administrator\Task\Status;
 use Joomla\Component\Scheduler\Administrator\Traits\TaskPluginTrait;
 use Joomla\Database\DatabaseAwareTrait;
 use Joomla\Database\ParameterType;
+use Joomla\Event\DispatcherAwareInterface;
+use Joomla\Event\DispatcherAwareTrait;
+use Joomla\Event\DispatcherInterface;
 use Joomla\Event\SubscriberInterface;
 use PHPMailer\PHPMailer\Exception as phpMailerException;
 
@@ -41,9 +45,10 @@ use PHPMailer\PHPMailer\Exception as phpMailerException;
  *
  * @since 5.0.0
  */
-final class UpdateNotification extends CMSPlugin implements SubscriberInterface
+final class UpdateNotification extends CMSPlugin implements SubscriberInterface, DispatcherAwareInterface
 {
     use DatabaseAwareTrait;
+    use DispatcherAwareTrait;
     use TaskPluginTrait;
     use MailerFactoryAwareTrait;
     use LanguageFactoryAwareTrait;
@@ -152,14 +157,13 @@ final class UpdateNotification extends CMSPlugin implements SubscriberInterface
          * backend of the site. The link generated above will be invalid and could probably block the user out of their
          * site, confusing them (they can't understand the third party security solution is not part of Joomla! proper).
          * So, we're calling the onBuildAdministratorLoginURL system plugin event to let these third party solutions
-         * add any necessary secret query parameters to the URL. The plugins are supposed to have a method with the
-         * signature:
-         *
-         * public function onBuildAdministratorLoginURL(Uri &$uri);
-         *
-         * The plugins should modify the $uri object directly and return null.
+         * add any necessary secret query parameters to the URL, in place or through updateUri().
          */
-        $this->getApplication()->triggerEvent('onBuildAdministratorLoginURL', [&$uri]);
+        $urlEvent = new BuildAdministratorLoginUrlEvent('onBuildAdministratorLoginURL', ['subject' => $uri]);
+
+        $this->getDispatcher()->dispatch('onBuildAdministratorLoginURL', $urlEvent);
+
+        $uri = $urlEvent->getUri();
 
         // Let's find out the email addresses to notify
         $superUsers = [];

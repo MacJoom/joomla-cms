@@ -10,6 +10,7 @@
 
 namespace Joomla\Component\Finder\Administrator\Indexer;
 
+use Joomla\CMS\Event\Finder\IndexAfterDeleteEvent;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Plugin\CMSPlugin;
@@ -17,6 +18,8 @@ use Joomla\CMS\Table\Table;
 use Joomla\Database\DatabaseAwareTrait;
 use Joomla\Database\DatabaseInterface;
 use Joomla\Database\QueryInterface;
+use Joomla\Event\DispatcherAwareInterface;
+use Joomla\Event\DispatcherAwareTrait;
 use Joomla\Event\DispatcherInterface;
 use Joomla\Utilities\ArrayHelper;
 
@@ -28,9 +31,12 @@ use Joomla\Utilities\ArrayHelper;
  * @since  5.0.0
  * @internal
  */
-abstract class DebugAdapter extends CMSPlugin
+abstract class DebugAdapter extends CMSPlugin implements DispatcherAwareInterface
 {
     use DatabaseAwareTrait;
+    use DispatcherAwareTrait {
+        setDispatcher as traitSetDispatcher;
+    }
 
     /**
      * The context is somewhat arbitrary but it must be unique or there will be
@@ -166,7 +172,41 @@ abstract class DebugAdapter extends CMSPlugin
         }
 
         // Get the indexer object
-        $this->indexer = new Indexer($this->getDatabase());
+        $this->indexer = new Indexer($this->getDatabase(), $this->dispatcher);
+    }
+
+    /**
+     * Set the event dispatcher, keeping this adapter's indexer on the same one.
+     *
+     * @param   DispatcherInterface  $dispatcher  The dispatcher to use.
+     *
+     * @return  $this
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    public function setDispatcher(DispatcherInterface $dispatcher)
+    {
+        if ($this->indexer) {
+            $this->indexer->setDispatcher($dispatcher);
+        }
+
+        return $this->traitSetDispatcher($dispatcher);
+    }
+
+    /**
+     * Get the event dispatcher, falling back to the shared one when none was injected.
+     *
+     * @return  DispatcherInterface
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    public function getDispatcher()
+    {
+        if (!$this->dispatcher) {
+            $this->setDispatcher(Factory::getContainer()->get(DispatcherInterface::class));
+        }
+
+        return $this->dispatcher;
     }
 
     /**
@@ -420,7 +460,10 @@ abstract class DebugAdapter extends CMSPlugin
 
         // Check the items.
         if (empty($items)) {
-            $this->getApplication()->triggerEvent('onFinderIndexAfterDelete', [$id]);
+            $this->getDispatcher()->dispatch(
+                'onFinderIndexAfterDelete',
+                new IndexAfterDeleteEvent('onFinderIndexAfterDelete', ['itemId' => (int) $id])
+            );
 
             return true;
         }

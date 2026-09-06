@@ -38,3 +38,16 @@ parameters:
 			paths:
 				- components/*
 				- administrator/components/*
+		# These classes declare DispatcherAwareInterface themselves, so the trait methods they call are not deprecated.
+		# @TODO: Remove once CMSPlugin no longer implements DispatcherAwareInterface in 7.0.
+		-
+			message: '''
+				#^Call to deprecated method (get|set)Dispatcher\(\) of class [a-zA-Z0-9\\_]+\:
+				5\.2 will be removed in 7\.0
+				             Plugin should implement DispatcherAwareInterface on its own, when it is needed\.$#
+			'''
+			paths:
+				- administrator/components/com_finder/src/Indexer/Adapter.php
+				- administrator/components/com_finder/src/Indexer/DebugAdapter.php
+				- plugins/task/updatenotification/src/Extension/UpdateNotification.php
+				- plugins/task/updatenotification/services/provider.php
