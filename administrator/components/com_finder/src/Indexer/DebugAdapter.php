@@ -423,7 +423,7 @@ abstract class DebugAdapter extends CMSPlugin implements DispatcherAwareInterfac
 
         // Check the items.
         if (empty($items)) {
-            $this->getDispatcher()->dispatch(
+            $this->getEventDispatcher()->dispatch(
                 'onFinderIndexAfterDelete',
                 new IndexAfterDeleteEvent('onFinderIndexAfterDelete', ['itemId' => (int) $id])
             );

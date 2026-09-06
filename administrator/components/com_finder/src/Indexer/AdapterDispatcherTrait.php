@@ -65,4 +65,26 @@ trait AdapterDispatcherTrait
 
         return $this->dispatcher;
     }
+
+    /**
+     * Get the event dispatcher for internal event dispatches.
+     *
+     * @return  DispatcherInterface
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    protected function getEventDispatcher(): DispatcherInterface
+    {
+        if (!$this->dispatcher) {
+            $dispatcher = Factory::getContainer()->get(DispatcherInterface::class);
+
+            if ($this->indexer) {
+                $this->indexer->setDispatcher($dispatcher);
+            }
+
+            $this->traitSetDispatcher($dispatcher);
+        }
+
+        return $this->dispatcher;
+    }
 }

@@ -31,6 +31,7 @@ use Joomla\Database\DatabaseAwareTrait;
 use Joomla\Database\ParameterType;
 use Joomla\Event\DispatcherAwareInterface;
 use Joomla\Event\DispatcherAwareTrait;
+use Joomla\Event\DispatcherInterface;
 use Joomla\Event\SubscriberInterface;
 use PHPMailer\PHPMailer\Exception as phpMailerException;
 
@@ -47,7 +48,10 @@ use PHPMailer\PHPMailer\Exception as phpMailerException;
 final class UpdateNotification extends CMSPlugin implements SubscriberInterface, DispatcherAwareInterface
 {
     use DatabaseAwareTrait;
-    use DispatcherAwareTrait;
+    use DispatcherAwareTrait {
+        getDispatcher as traitGetDispatcher;
+        setDispatcher as traitSetDispatcher;
+    }
     use TaskPluginTrait;
     use MailerFactoryAwareTrait;
     use LanguageFactoryAwareTrait;
@@ -69,6 +73,46 @@ final class UpdateNotification extends CMSPlugin implements SubscriberInterface,
      * @since 5.0.0
      */
     protected $autoloadLanguage = true;
+
+    /**
+     * Set the event dispatcher.
+     *
+     * @param   DispatcherInterface  $dispatcher  The dispatcher to use.
+     *
+     * @return  $this
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    public function setDispatcher(DispatcherInterface $dispatcher)
+    {
+        return $this->traitSetDispatcher($dispatcher);
+    }
+
+    /**
+     * Set the event dispatcher for service provider injection.
+     *
+     * @param   DispatcherInterface  $dispatcher  The dispatcher to use.
+     *
+     * @return  $this
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    public function setEventDispatcher(DispatcherInterface $dispatcher)
+    {
+        return $this->traitSetDispatcher($dispatcher);
+    }
+
+    /**
+     * Get the event dispatcher for internal event dispatches.
+     *
+     * @return  DispatcherInterface
+     *
+     * @since   __DEPLOY_VERSION__
+     */
+    private function getEventDispatcher(): DispatcherInterface
+    {
+        return $this->traitGetDispatcher();
+    }
 
     /**
      * @inheritDoc
@@ -160,7 +204,7 @@ final class UpdateNotification extends CMSPlugin implements SubscriberInterface,
          */
         $urlEvent = new BuildAdministratorLoginUrlEvent('onBuildAdministratorLoginURL', ['subject' => $uri]);
 
-        $this->getDispatcher()->dispatch('onBuildAdministratorLoginURL', $urlEvent);
+        $this->getEventDispatcher()->dispatch('onBuildAdministratorLoginURL', $urlEvent);
 
         $uri = $urlEvent->getUri();
 

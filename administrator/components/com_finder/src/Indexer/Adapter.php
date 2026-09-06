@@ -426,7 +426,7 @@ abstract class Adapter extends CMSPlugin implements DispatcherAwareInterface
 
         // Check the items.
         if (empty($items)) {
-            $this->getDispatcher()->dispatch(
+            $this->getEventDispatcher()->dispatch(
                 'onFinderIndexAfterDelete',
                 new IndexAfterDeleteEvent('onFinderIndexAfterDelete', ['itemId' => (int) $id])
             );

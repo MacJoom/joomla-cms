@@ -40,7 +40,7 @@ return new class () implements ServiceProviderInterface {
                     (array) PluginHelper::getPlugin('task', 'updatenotification')
                 );
                 $plugin->setApplication(Factory::getApplication());
-                $plugin->setDispatcher($container->get(DispatcherInterface::class));
+                $plugin->setEventDispatcher($container->get(DispatcherInterface::class));
                 $plugin->setDatabase($container->get(DatabaseInterface::class));
                 $plugin->setMailerFactory($container->get(MailerFactoryInterface::class));
                 $plugin->setLanguageFactory($container->get(LanguageFactoryInterface::class));
