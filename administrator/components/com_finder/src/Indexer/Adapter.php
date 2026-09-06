@@ -18,7 +18,6 @@ use Joomla\Database\DatabaseAwareTrait;
 use Joomla\Database\DatabaseInterface;
 use Joomla\Database\QueryInterface;
 use Joomla\Event\DispatcherAwareInterface;
-use Joomla\Event\DispatcherAwareTrait;
 use Joomla\Event\DispatcherInterface;
 use Joomla\Utilities\ArrayHelper;
 
@@ -34,9 +33,7 @@ use Joomla\Utilities\ArrayHelper;
 abstract class Adapter extends CMSPlugin implements DispatcherAwareInterface
 {
     use DatabaseAwareTrait;
-    use DispatcherAwareTrait {
-        setDispatcher as traitSetDispatcher;
-    }
+    use AdapterDispatcherTrait;
 
     /**
      * The context is somewhat arbitrary but it must be unique or there will be
@@ -179,40 +176,6 @@ abstract class Adapter extends CMSPlugin implements DispatcherAwareInterface
 
         // Get the indexer object
         $this->indexer = new Indexer($this->getDatabase(), $this->dispatcher);
-    }
-
-    /**
-     * Set the event dispatcher, keeping this adapter's indexer on the same one.
-     *
-     * @param   DispatcherInterface  $dispatcher  The dispatcher to use.
-     *
-     * @return  $this
-     *
-     * @since   __DEPLOY_VERSION__
-     */
-    public function setDispatcher(DispatcherInterface $dispatcher)
-    {
-        if ($this->indexer) {
-            $this->indexer->setDispatcher($dispatcher);
-        }
-
-        return $this->traitSetDispatcher($dispatcher);
-    }
-
-    /**
-     * Get the event dispatcher, falling back to the shared one when none was injected.
-     *
-     * @return  DispatcherInterface
-     *
-     * @since   __DEPLOY_VERSION__
-     */
-    public function getDispatcher()
-    {
-        if (!$this->dispatcher) {
-            $this->setDispatcher(Factory::getContainer()->get(DispatcherInterface::class));
-        }
-
-        return $this->dispatcher;
     }
 
     /**
