@@ -39,5 +39,6 @@ class TableColumnsAssetItem extends WebAssetItem implements WebAssetAttachBehavi
     {
         // Add table-columns.js language strings
         Text::script('JGLOBAL_COLUMNS');
+        Text::script('JGLOBAL_COLUMNS_SAVE_HIDDEN');
     }
 }
