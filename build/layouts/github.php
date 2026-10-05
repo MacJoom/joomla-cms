@@ -1,20 +1,21 @@
 <?php
 
-$version = $version ?? '6.0.0'; // set in the build script by extracting it from the Version class
-$majorVersion = $majorVersion ?? substr($version, 0, strpos($version, '.'));
-$previousVersion = $previousRelease ?? '5.4.0'; // Last patch release
-$previousMajorVersion = substr($previousVersion, 0, strpos($previousVersion, '.'));
-$previousMajorMinorVersion = $previousMajorVersion . '.4';
-$tagVersion = $tagVersion ?? $version; // Set in the build script by extracting it from git
+$fullVersion = $fullVersion ?? '6.0.0'; // set in the build script by extracting it from the Version class
+$majorVersion = $majorVersion ?? (int) $fullVersion;
+$previousMajorMinorVersion = ($majorVersion - 1) . '.4'; // Last minor version of the previous major
+$tagVersion = $tagVersion ?? $fullVersion; // Set in the build script by extracting it from git
+$previousTag = $previousTag ?? null; // Last tag of this branch, set in the build script
 $githubContent = $githubContent ?? []; // set by build script
 
-$contributors = 'INSERT_HERE';
-$pullRequests = 'INSERT_HERE';
-$migrationInfo = '[New migration guide](https://manual.joomla.org/migrations/54-60/)';
-$documentation = 'New developer [documentation](https://manual.joomla.org)';
-$releasePage = 'https://www.joomla.org/announcements/release-news/5900-joomla-5-0-and-joomla-4-4-are-here';
+$contributors = $contributors ?? 'INSERT_HERE'; // PR authors since the previous tag, set in the build script
+$pullRequests = $pullRequests ?? 'INSERT_HERE'; // Merged PRs (without upmerges) since the previous tag, set in the build script
+$migrationInfo = '[Migration guide](' . ($migrationInfo ?? 'https://manual.joomla.org/migrations/') . ')';
+$documentation = 'Developer [documentation](https://manual.joomla.org)';
+$releasePage = $releasePage ?? 'https://www.joomla.org/announcements/release-news.html';
 $releaseDownloadPage = 'https://downloads.joomla.org/cms/joomla' . $majorVersion;
-$changelog = 'https://github.com/joomla/joomla-cms/compare/' . $previousVersion .'...' . $tagVersion;
+$changelog = $previousTag
+    ? 'https://github.com/joomla/joomla-cms/compare/' . $previousTag . '...' . $tagVersion
+    : 'https://github.com/joomla/joomla-cms/commits/' . $tagVersion;
 $githubDownloadLink = 'https://github.com/joomla/joomla-cms/releases/download/' . $tagVersion . '/';
 
 $table = [];
@@ -31,7 +32,7 @@ foreach (['FULL', 'UPGRADE', 'MINOR', 'POINT'] as $type) {
         } elseif (str_ends_with($packageName, '.tar.gz')) {
             $table[$type] .= "| [GNU Zip Archive (.tar.gz)]";
         } elseif (str_ends_with($packageName, '.tar.bz2')) {
-            $table[$type] .= "| [Bzip2 Archive (.tar.zst)]";
+            $table[$type] .= "| [Bzip2 Archive (.tar.bz2)]";
         } elseif (str_ends_with($packageName, '.tar.zst')) {
             $table[$type] .= "| [Zstandard Archive (.tar.zst)]";
         } else {
@@ -52,7 +53,7 @@ $output = <<<MD
 
 ## 👀 Release information
 * 💁 **{$contributors}**+ contributors
-* 🧰 **{$pullRequests}**+ Pull Requests has been merged
+* 🧰 **{$pullRequests}**+ Pull Requests have been merged
 * ⬆️ {$migrationInfo}
 * 📖 {$documentation}
 * 🌎 [Release page]({$releasePage})
@@ -93,7 +94,7 @@ $output .= <<<MD
 ### ✒️ Upgrade Packages
 
 > [!IMPORTANT]
-> Don't update directly from a version lower than 5.4 it is important that you first update to 5.4 and then update to 6.x
+> Don't update directly from a version lower than {$previousMajorMinorVersion}, it is important that you first update to {$previousMajorMinorVersion} and then update to {$majorVersion}.x
 
 | Update from a previous version | SHA-256 Checksums |
 |--------------------------------|-------------------|

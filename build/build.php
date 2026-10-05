@@ -38,10 +38,13 @@ function usage(string $command)
     echo PHP_TAB . PHP_TAB . '--remote=<remote>:' . PHP_TAB . PHP_TAB . 'The git remote reference to build from (ex: `tags/3.8.6`, `4.0-dev`), defaults to the most recent tag for the repository' . PHP_EOL;
     echo PHP_TAB . PHP_TAB . '--exclude-zip:' . PHP_TAB . PHP_TAB . PHP_TAB . 'Exclude the generation of .zip packages' . PHP_EOL;
     echo PHP_TAB . PHP_TAB . '--exclude-gzip:' . PHP_TAB . PHP_TAB . PHP_TAB . 'Exclude the generation of .tar.gz packages' . PHP_EOL;
-    echo PHP_TAB . PHP_TAB . '--include-bzip2:' . PHP_TAB . PHP_TAB . 'Exclude the generation of .tar.bz2 packages' . PHP_EOL;
-    echo PHP_TAB . PHP_TAB . '--exclude-zstd:' . PHP_TAB . PHP_TAB . PHP_TAB . 'Include the generation of .tar.zst packages' . PHP_EOL;
+    echo PHP_TAB . PHP_TAB . '--include-bzip2:' . PHP_TAB . PHP_TAB . 'Include the generation of .tar.bz2 packages' . PHP_EOL;
+    echo PHP_TAB . PHP_TAB . '--exclude-zstd:' . PHP_TAB . PHP_TAB . PHP_TAB . 'Exclude the generation of .tar.zst packages' . PHP_EOL;
     echo PHP_TAB . PHP_TAB . '--disable-patch-packages:' . PHP_TAB . 'Disable the generation of patch packages' . PHP_EOL;
     echo PHP_TAB . PHP_TAB . '--debug-build:' . PHP_TAB . 'Include development packages and build folder' . PHP_EOL;
+    echo PHP_TAB . PHP_TAB . '--release-page=<url>:' . PHP_TAB . 'URL of the release announcement, used in github_release.txt' . PHP_EOL;
+    echo PHP_TAB . PHP_TAB . '--migration-guide=<url>:' . PHP_TAB . 'URL of the migration guide, defaults to the manual.joomla.org guide for this minor version' . PHP_EOL;
+    echo PHP_TAB . PHP_TAB . '--previous-tag=<tag>:' . PHP_TAB . 'Tag to compare against for changelog and statistics, defaults to the last tag of this branch' . PHP_EOL;
     echo PHP_TAB . PHP_TAB . '--help:' . PHP_TAB . PHP_TAB . PHP_TAB . PHP_TAB . 'Show this help output' . PHP_EOL;
     echo PHP_EOL;
 }
@@ -271,6 +274,153 @@ function capture_or_fail(string $command): string
     return implode("\n", $output);
 }
 
+/**
+ * Finds the previous release tag of the branch the given release belongs to.
+ *
+ * Only tags reachable from the release ref with a lower version are considered. Tags of the same
+ * major.minor series are preferred, so tags of lower branches pulled in by upmerges are ignored.
+ * If the series has no earlier tag (e.g. the first alpha), the highest lower tag is used.
+ *
+ * @param string $git         Path to the git binary
+ * @param string $repo        Path to the repository
+ * @param string $ref         The git ref of the release (e.g. `tags/6.2.0`)
+ * @param string $fullVersion The version of the release (e.g. `6.2.0-rc1`)
+ *
+ * @return string|null  The previous tag or null if none was found
+ */
+function find_previous_tag(string $git, string $repo, string $ref, string $fullVersion): ?string
+{
+    $tags = explode("\n", capture_or_fail($git . ' -C ' . escapeshellarg($repo) . ' tag --merged ' . escapeshellarg($ref)));
+
+    // Only use tags looking like Joomla versions and lower than the release version
+    $tags = array_filter(
+        $tags,
+        fn ($tag) => preg_match('/^\d+\.\d+\.\d+(-[a-z]+\d*)?$/i', $tag) && version_compare($tag, $fullVersion, '<')
+    );
+
+    if (!$tags) {
+        return null;
+    }
+
+    usort($tags, fn ($a, $b) => version_compare($b, $a));
+
+    [$major, $minor] = explode('.', $fullVersion);
+
+    foreach ($tags as $tag) {
+        if (str_starts_with($tag, $major . '.' . $minor . '.')) {
+            return $tag;
+        }
+    }
+
+    return $tags[0];
+}
+
+/**
+ * Collects the merged pull requests (without upmerges) and their authors between two refs.
+ *
+ * Only the first-parent history of the release branch is walked, so the content of upmerges is not counted.
+ * Squash merged PRs are detected by the `(#12345)` suffix, merge commits by `Merge pull request #12345`.
+ *
+ * @param string $git  Path to the git binary
+ * @param string $repo Path to the repository
+ * @param string $from The previous release tag
+ * @param string $to   The release ref
+ *
+ * @return array  ['pullRequests' => int[], 'contributors' => int]
+ */
+function collect_release_stats(string $git, string $repo, string $from, string $to): array
+{
+    $gitRepo = $git . ' -C ' . escapeshellarg($repo);
+    $log     = capture_or_fail(
+        $gitRepo . ' log --first-parent --format=%H%x1f%P%x1f%an%x1f%ae%x1f%s ' . escapeshellarg($from . '..' . $to)
+    );
+
+    $pullRequests = [];
+    $authors      = [];
+
+    foreach (array_filter(explode("\n", $log)) as $line) {
+        [, $parents, $name, $email, $subject] = explode("\x1f", $line);
+
+        if (preg_match('/^Merge pull request #(\d+) from (\S+)/', $subject, $matches)) {
+            $number = (int) $matches[1];
+            $branch = $matches[2];
+
+            // The merge commit is created by the merger, the PR author is the author of the first PR commit
+            $parents = explode(' ', $parents);
+
+            if (\count($parents) > 1) {
+                $first = capture_or_fail(
+                    $gitRepo . ' log --reverse --no-merges --format=%an%x1f%ae ' . escapeshellarg($parents[0] . '..' . $parents[1])
+                );
+                $first = strtok($first, "\n");
+
+                if ($first) {
+                    [$name, $email] = explode("\x1f", $first);
+                }
+            }
+        } elseif (preg_match('/\(#(\d+)\)$/', $subject, $matches)) {
+            $number = (int) $matches[1];
+            $branch = '';
+        } else {
+            // Not a pull request, e.g. version bumps by the release manager
+            continue;
+        }
+
+        if (stripos($subject . ' ' . $branch, 'upmerge') !== false) {
+            continue;
+        }
+
+        $pullRequests[$number] = $number;
+        $authors[]             = [strtolower(trim($name)), normalise_email($email)];
+    }
+
+    return [
+        'pullRequests' => array_values($pullRequests),
+        'contributors' => count_unique_people($authors),
+    ];
+}
+
+/**
+ * Normalises GitHub noreply addresses (`12345+login@users.noreply.github.com`) to the login.
+ *
+ * @param string $email
+ *
+ * @return string
+ */
+function normalise_email(string $email): string
+{
+    $email = strtolower(trim($email));
+
+    if (preg_match('/^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/', $email, $matches)) {
+        return $matches[1];
+    }
+
+    return $email;
+}
+
+/**
+ * Counts unique people, treating two entries as the same person if either the name or the email matches.
+ *
+ * @param array $authors  List of [name, email] pairs
+ *
+ * @return int
+ */
+function count_unique_people(array $authors): int
+{
+    $people = [];
+    $index  = [];
+
+    foreach ($authors as [$name, $email]) {
+        $id = $index['n:' . $name] ?? $index['e:' . $email] ?? \count($people);
+
+        $people[$id]          = true;
+        $index['n:' . $name]  = $id;
+        $index['e:' . $email] = $id;
+    }
+
+    return \count($people);
+}
+
 $time = time();
 
 // Set path to git binary (e.g., /usr/local/git/bin/git or /usr/bin/git)
@@ -290,7 +440,7 @@ $tmp      = $here . '/tmp';
 $fullpath = $tmp . '/' . $time;
 
 // Parse input options
-$options = getopt('', ['help', 'remote::', 'exclude-zip', 'exclude-gzip', 'include-bzip2', 'exclude-zstd', 'debug-build', 'disable-patch-packages']);
+$options = getopt('', ['help', 'remote::', 'exclude-zip', 'exclude-gzip', 'include-bzip2', 'exclude-zstd', 'debug-build', 'disable-patch-packages', 'release-page:', 'migration-guide:', 'previous-tag:']);
 
 $remote             = $options['remote'] ?? false;
 $debugBuild         = isset($options['debug-build']);
@@ -300,6 +450,9 @@ $excludeBzip2       = !isset($options['include-bzip2']);
 $excludeZstd        = isset($options['exclude-zstd']);
 $buildPatchPackages = false && !isset($options['disable-patch-packages']);
 $showHelp           = isset($options['help']);
+$releasePage        = $options['release-page'] ?? null;
+$migrationInfo      = $options['migration-guide'] ?? null;
+$previousTag        = $options['previous-tag'] ?? null;
 
 // Disable the generation of extra text files
 $includeExtraTextfiles = false;
@@ -740,14 +893,32 @@ if ($includeExtraTextfiles) {
     echo "Generating github_release.txt file\n";
 
     $githubContent = [];
-    $releaseText   = [
-        'FULL'    => 'New Joomla! Installations ',
-        'POINT'   => 'Update from Joomla! ' . $version . '.' . $previousRelease . ' ',
-        'MINOR'   => 'Update from Joomla! ' . $version . '.x ',
-        'UPGRADE' => 'Update from Joomla! 3.10 ',
-    ];
+    $tagVersion ??= $fullVersion;
 
-    $githubLink = 'https://github.com/joomla/joomla-cms/releases/download/' . $tagVersion . '/';
+    // Find the previous release of this branch to compare against
+    $previousTag ??= find_previous_tag($systemGit, $repo, $remote, $fullVersion);
+
+    if ($previousTag) {
+        echo "Collecting release statistics since $previousTag\n";
+
+        $stats        = collect_release_stats($systemGit, $repo, $previousTag, $remote);
+        $pullRequests = \count($stats['pullRequests']);
+        $contributors = $stats['contributors'];
+    } else {
+        echo "WARNING: No previous tag found, release statistics and changelog link are not available\n";
+    }
+
+    // The migration guide covers the step from the previous minor (or last minor of the previous major) to this one
+    if (!$migrationInfo) {
+        $previousMinor = Version::MINOR_VERSION > 0
+            ? $majorVersion . (Version::MINOR_VERSION - 1)
+            : ($majorVersion - 1) . '4';
+        $migrationInfo = 'https://manual.joomla.org/migrations/' . $previousMinor . '-' . $majorVersion . Version::MINOR_VERSION . '/';
+    }
+
+    if (!$releasePage) {
+        echo "WARNING: No --release-page given, using the release news overview page\n";
+    }
 
     foreach ($checksums as $packageName => $packageHashes) {
         $type = '';
