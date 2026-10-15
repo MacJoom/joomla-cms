@@ -927,6 +927,20 @@ CREATE INDEX "#__scheduler_logs_idx_nextdate" ON "#__scheduler_logs" ("nextdate"
 -- --------------------------------------------------------
 
 --
+-- Table structure for table "#__phpscanner_baseline"
+--
+
+CREATE TABLE IF NOT EXISTS "#__phpscanner_baseline" (
+  "id" serial NOT NULL,
+  "path" varchar(1024) NOT NULL,
+  "hash" char(64) NOT NULL,
+  "created" timestamp without time zone,
+  PRIMARY KEY ("id")
+);
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table "#__schemaorg"
 --
 
