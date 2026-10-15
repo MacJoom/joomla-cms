@@ -4,7 +4,8 @@
  *
  * Fills any Health Check quick-icon that carries a data-url by fetching its value from
  * com_ajax. When the response includes an item list, clicking the icon toggles that list
- * instead of navigating, so each matched item can be opened directly.
+ * instead of navigating, so each matched item can be opened directly. Items that carry a
+ * `code` property open that code in a modal instead.
  */
 ((document) => {
   'use strict';
@@ -14,6 +15,78 @@
   };
   const STATUS_FILTER = {
     success: 'healthy', warning: 'warning', error: 'critical', critical: 'critical', info: 'healthy',
+  };
+
+  let codeModal = null;
+  let lastFocused = null;
+
+  const hideCodeModal = () => {
+    if (!codeModal || codeModal.hidden) {
+      return;
+    }
+
+    codeModal.hidden = true;
+
+    // Return focus to the item that opened the modal.
+    if (lastFocused && typeof lastFocused.focus === 'function') {
+      lastFocused.focus();
+    }
+  };
+
+  // Lazily create a single reusable modal for showing an item's affected code.
+  const ensureCodeModal = () => {
+    if (codeModal) {
+      return codeModal;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'healthcheck-code-modal';
+    overlay.hidden = true;
+    overlay.innerHTML = '<div class="healthcheck-code-modal-backdrop"></div>'
+      + '<div class="healthcheck-code-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="healthcheck-code-modal-title">'
+      + '<div class="healthcheck-code-modal-header">'
+      + '<h3 class="healthcheck-code-modal-title" id="healthcheck-code-modal-title"></h3>'
+      + '<button type="button" class="btn-close"></button>'
+      + '</div>'
+      + '<pre class="healthcheck-code-modal-body" tabindex="0"><code></code></pre>'
+      + '</div>';
+
+    const closeButton = overlay.querySelector('.btn-close');
+    closeButton.setAttribute('aria-label', Joomla.Text._('JCLOSE', 'Close'));
+    closeButton.addEventListener('click', hideCodeModal);
+    overlay.querySelector('.healthcheck-code-modal-backdrop').addEventListener('click', hideCodeModal);
+
+    overlay.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        hideCodeModal();
+        return;
+      }
+
+      // Keep keyboard focus inside the dialog while it is open.
+      if (event.key === 'Tab') {
+        const focusable = [closeButton, overlay.querySelector('.healthcheck-code-modal-body')];
+        const index = focusable.indexOf(document.activeElement);
+        const next = event.shiftKey ? index - 1 : index + 1;
+        event.preventDefault();
+        focusable[(next + focusable.length) % focusable.length].focus();
+      }
+    });
+
+    document.body.appendChild(overlay);
+    codeModal = overlay;
+
+    return overlay;
+  };
+
+  // Populate and open the code modal. Title and code are set via textContent, so never injected.
+  const showCodeModal = (title, code) => {
+    const overlay = ensureCodeModal();
+    overlay.querySelector('.healthcheck-code-modal-title').textContent = title;
+    overlay.querySelector('.healthcheck-code-modal-body code').textContent = code;
+    lastFocused = document.activeElement;
+    overlay.hidden = false;
+    overlay.querySelector('.btn-close').focus();
   };
 
   const buildItemList = (link, items) => {
@@ -27,7 +100,17 @@
     items.forEach((item) => {
       const row = document.createElement('li');
 
-      if (item.link) {
+      if (item.code) {
+        // The item carries source code (e.g. a class redefinition): show it in a modal instead of a link.
+        const anchor = document.createElement('a');
+        anchor.href = '#';
+        anchor.textContent = item.title;
+        anchor.addEventListener('click', (event) => {
+          event.preventDefault();
+          showCodeModal(item.title, String(item.code));
+        });
+        row.appendChild(anchor);
+      } else if (item.link) {
         const anchor = document.createElement('a');
         anchor.href = item.link;
         anchor.textContent = item.title;
