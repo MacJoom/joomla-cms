@@ -39,7 +39,7 @@
       return codeModal;
     }
 
-    // Build the modal with DOM methods rather than innerHTML.
+    // Build the modal with DOM methods.
     const create = (tag, className) => {
       const element = document.createElement(tag);
       element.className = className;
@@ -159,6 +159,13 @@
     });
   };
 
+  // Replace the icon's amount with the given value, using textContent so it is never parsed as HTML.
+  const setAmount = (amountEl, value) => {
+    const amountWrapper = document.createElement('div');
+    amountWrapper.textContent = value;
+    amountEl.replaceChildren(amountWrapper);
+  };
+
   const fillIcon = async (amountEl) => {
     const url = amountEl.getAttribute('data-url');
 
@@ -182,15 +189,12 @@
       const data = Array.isArray(payload) ? payload[0] : payload;
 
       if (!data || typeof data.amount === 'undefined') {
-        amountEl.innerHTML = '<div>0</div>';
+        setAmount(amountEl, 0);
         return;
       }
 
       const amount = parseInt(data.amount, 10) || 0;
-      const amount_wrapper = document.createElement('div');
-      amount_wrapper.textContent = amount;
-      amountEl.innerHTML = '';
-      amountEl.appendChild(amount_wrapper);
+      setAmount(amountEl, amount);
 
       const status = data.status || 'success';
 
@@ -212,7 +216,7 @@
         wrapper.setAttribute('data-healthcheck-status', STATUS_FILTER[status] || 'healthy');
       }
     } catch (e) {
-      amountEl.innerHTML = '<div>!</div>';
+      setAmount(amountEl, '!');
     }
   };
 
