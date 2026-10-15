@@ -39,22 +39,42 @@
       return codeModal;
     }
 
-    const overlay = document.createElement('div');
-    overlay.className = 'healthcheck-code-modal';
-    overlay.hidden = true;
-    overlay.innerHTML = '<div class="healthcheck-code-modal-backdrop"></div>'
-      + '<div class="healthcheck-code-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="healthcheck-code-modal-title">'
-      + '<div class="healthcheck-code-modal-header">'
-      + '<h3 class="healthcheck-code-modal-title" id="healthcheck-code-modal-title"></h3>'
-      + '<button type="button" class="btn-close"></button>'
-      + '</div>'
-      + '<pre class="healthcheck-code-modal-body" tabindex="0"><code></code></pre>'
-      + '</div>';
+    // Build the modal with DOM methods rather than innerHTML.
+    const create = (tag, className) => {
+      const element = document.createElement(tag);
+      element.className = className;
+      return element;
+    };
 
-    const closeButton = overlay.querySelector('.btn-close');
+    const overlay = create('div', 'healthcheck-code-modal');
+    overlay.hidden = true;
+
+    const backdrop = create('div', 'healthcheck-code-modal-backdrop');
+
+    const dialog = create('div', 'healthcheck-code-modal-dialog');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'healthcheck-code-modal-title');
+
+    const header = create('div', 'healthcheck-code-modal-header');
+
+    const title = create('h3', 'healthcheck-code-modal-title');
+    title.id = 'healthcheck-code-modal-title';
+
+    const closeButton = create('button', 'btn-close');
+    closeButton.type = 'button';
     closeButton.setAttribute('aria-label', Joomla.Text._('JCLOSE', 'Close'));
+
+    const body = create('pre', 'healthcheck-code-modal-body');
+    body.tabIndex = 0;
+    body.appendChild(document.createElement('code'));
+
+    header.append(title, closeButton);
+    dialog.append(header, body);
+    overlay.append(backdrop, dialog);
+
     closeButton.addEventListener('click', hideCodeModal);
-    overlay.querySelector('.healthcheck-code-modal-backdrop').addEventListener('click', hideCodeModal);
+    backdrop.addEventListener('click', hideCodeModal);
 
     overlay.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
@@ -65,7 +85,7 @@
 
       // Keep keyboard focus inside the dialog while it is open.
       if (event.key === 'Tab') {
-        const focusable = [closeButton, overlay.querySelector('.healthcheck-code-modal-body')];
+        const focusable = [closeButton, body];
         const index = focusable.indexOf(document.activeElement);
         const next = event.shiftKey ? index - 1 : index + 1;
         event.preventDefault();
